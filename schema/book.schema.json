@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "文库档案：书籍元数据",
+  "type": "object",
+  "required": ["id", "title", "files"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 80, "description": "唯一且稳定的书籍标识，允许汉字、字母、数字、下划线和连字符" },
+    "title": { "type": "string", "minLength": 1 },
+    "originalTitle": { "type": "string" },
+    "author": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+    "authors": { "type": "array", "items": { "type": "string" } },
+    "description": { "type": "string" },
+    "translator": { "type": "string" },
+    "illustrator": { "type": "string" },
+    "category": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "status": { "type": "string" },
+    "completed": { "type": "boolean" },
+    "language": { "type": "string", "description": "正文实际语言。优先 zh-Hans 简体中文，其次 zh-Hant 繁体中文，再其次其他语言。兼容 zh-CN/zh-TW 等地区码。" },
+    "downloadUrl": { "type": "string", "format": "uri", "description": "完整 TXT 文件下载入口" },
+    "downloadVariants": {
+      "type": "array",
+      "description": "同一书籍的完整 TXT 候选版本，按简体、繁体、其他语言选取；仅用于下载任务，不写入公开书籍资料。",
+      "items": {
+        "type": "object",
+        "required": ["url", "language"],
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "language": { "type": "string" },
+          "encoding": { "type": "string" },
+          "integrity": { "type": "object", "properties": { "sha256": { "type": "string" } } }
+        }
+      }
+    },
+    "originalLanguage": { "type": "string" },
+    "publisher": { "type": "string" },
+    "publishedYear": { "type": ["string", "integer"] },
+    "isbn": { "type": "string" },
+    "edition": { "type": "string" },
+    "updatedAt": { "type": "string" },
+    "addedAt": { "type": "string" },
+    "wordCount": { "type": "integer", "minimum": 0 },
+    "chapterCount": { "type": "integer", "minimum": 0 },
+    "volumeCount": { "type": "integer", "minimum": 0 },
+    "encoding": { "type": "string", "description": "auto、utf-8、gbk、gb18030、utf-16le、big5 等 TextDecoder 支持的文本编码" },
+    "published": { "type": "boolean", "description": "false 时不展示。未指定时，JSON 与正文齐备即自动上架。" },
+    "files": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "description": "相对于当前 JSON 的完整 TXT/MD 文件路径" },
+        "cover": { "type": "string" },
+        "epub": { "type": "string" },
+        "pdf": { "type": "string" }
+      },
+      "additionalProperties": { "type": "string" }
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "url": { "type": "string" },
+        "id": { "type": ["string", "integer"] },
+        "updatedAt": { "type": "string" },
+        "rights": { "type": "string" }
+      }
+    },
+    "extra": { "type": "object" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,26 @@
+{
+  "id": "xiyouji",
+  "title": "西游记",
+  "originalTitle": "西遊記",
+  "author": "吴承恩",
+  "description": "唐僧师徒一路向西，行过山川，历经磨难。这部中国古典神魔小说，以取经之旅串起想象奇崛的故事，也写尽人情与世相。\n\n本书为 Project Gutenberg 收录的繁体中文全文，完整保存原始 TXT，并自动解析一百回目录。",
+  "category": "古典文学",
+  "tags": ["神魔", "冒险", "长篇"],
+  "status": "已完结",
+  "language": "zh-Hant",
+  "updatedAt": "2026-11-09",
+  "encoding": "utf-8",
+  "files": { "text": "content.txt" },
+  "source": {
+    "name": "Project Gutenberg",
+    "url": "https://www.gutenberg.org/ebooks/23962",
+    "id": "23962",
+    "rights": "来源站标注 Public domain in the USA；原作古典文本。"
+  },
+  "extra": {
+    "文本版本": "繁体中文完整文本",
+    "目录说明": "自动识别第一回至第一〇〇回",
+    "资料日期说明": "updatedAt 是本地资料整理日期，并非原作首次出版日期。"
+  },
+  "downloadUrl": "https://www.gutenberg.org/ebooks/23962.txt.utf-8"
+}

@@ -1,0 +1,31 @@
+{
+  "id": "my-book",
+  "title": "书名",
+  "originalTitle": "",
+  "author": "作者",
+  "translator": "",
+  "illustrator": "",
+  "description": "在这里填写内容介绍，可使用换行分段。",
+  "category": "未分类",
+  "tags": [],
+  "status": "已完结",
+  "language": "zh-Hans",
+  "originalLanguage": "",
+  "publisher": "",
+  "publishedYear": "",
+  "isbn": "",
+  "edition": "",
+  "updatedAt": "2026-11-09",
+  "encoding": "auto",
+  "files": {
+    "text": "content.txt"
+  },
+  "source": {
+    "name": "",
+    "url": "",
+    "id": "",
+    "updatedAt": "",
+    "rights": ""
+  },
+  "extra": {}
+}

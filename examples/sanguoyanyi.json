@@ -1,0 +1,27 @@
+{
+  "id": "sanguoyanyi",
+  "title": "三国演义",
+  "originalTitle": "三國志演義",
+  "author": "罗贯中",
+  "description": "以东汉末年至三国归晋的历史为背景，描绘魏、蜀、吴之间的兴衰与人物命运。\n\n本书为 Project Gutenberg 收录的公版中文全文，保存来源 TXT 文件并自动生成阅读目录。来源仅提供这一份中文全文入口，本地按实际繁体文本标注。",
+  "category": "古典文学",
+  "tags": ["历史", "三国", "长篇"],
+  "status": "已完结",
+  "language": "zh-Hant",
+  "encoding": "utf-8",
+  "updatedAt": "2026-11-09",
+  "files": { "text": "content.txt" },
+  "source": {
+    "name": "Project Gutenberg",
+    "url": "https://www.gutenberg.org/ebooks/23950",
+    "id": "23950",
+    "releasedAt": "2007-12-21",
+    "rights": "来源站标注 Public domain in the USA；原作为中国古典文本。"
+  },
+  "extra": {
+    "资料日期说明": "updatedAt 是本地资料整理日期，并非原作首次出版日期。"
+  },
+  "downloadVariants": [
+    { "language": "zh-Hant", "encoding": "utf-8", "url": "https://www.gutenberg.org/ebooks/23950.txt.utf-8" }
+  ]
+}

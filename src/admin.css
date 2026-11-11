@@ -1,0 +1,5 @@
+.admin-card{max-width:460px;padding:28px;background:var(--paper);border:1px solid var(--line);border-radius:7px}
+.admin-card h2{font-size:20px;margin:0 0 12px;font-weight:600}.admin-card>p{font-size:12px;line-height:1.9;color:#68785d;margin:0 0 23px}
+.admin-card form{display:grid;gap:19px}.admin-card label{display:grid;gap:8px;font-size:13px}.admin-card input{width:100%;min-width:0;height:42px;padding:0 12px;border:1px solid #dce3db;background:#fff;border-radius:5px;color:var(--ink)}
+.admin-card .button{justify-self:start;min-width:90px}.admin-card .form-error{margin:0}.admin-account{display:flex;align-items:center;gap:10px;font-size:12px;min-width:0}.admin-account>span{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:720px){.admin-card{padding:23px 20px}.admin-account{gap:5px;font-size:10px}.admin-account>span{max-width:70px}.admin-account .text-button{font-size:10px}}

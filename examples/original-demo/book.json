@@ -1,0 +1,14 @@
+{
+  "id": "original-demo",
+  "title": "书架上的第一束光",
+  "author": "文库档案示例",
+  "description": "用于演示书库、章节阅读和全文下载的原创短篇。可随项目自由使用与分享。",
+  "category": "原创短篇",
+  "tags": ["书店", "日常", "示例"],
+  "status": "已完结",
+  "language": "zh-Hans",
+  "encoding": "utf-8",
+  "updatedAt": "2026-11-11",
+  "files": { "text": "content.txt" },
+  "source": { "name": "项目原创示例", "rights": "随本项目以 MIT 许可证提供。" }
+}

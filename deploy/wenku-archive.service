@@ -1,0 +1,20 @@
+[Unit]
+Description=Wenku Archive web server and controlled downloader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/apps/wenku-archive
+Environment=NODE_ENV=production
+EnvironmentFile=%h/.config/wenku-archive/server.env
+ExecStart=/usr/bin/node server/index.mjs
+ExecStop=/usr/bin/node scripts/watch-library.mjs --queue ${ARCHIVE_QUEUE} --library ${ARCHIVE_LIBRARY} --state-dir ${ARCHIVE_STATE_DIR} --stop
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=control-group
+UMask=0077
+
+[Install]
+WantedBy=default.target
