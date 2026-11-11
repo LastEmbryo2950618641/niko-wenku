@@ -46,9 +46,11 @@ export default function WorkerPanel({ onUnauthorized }) {
     finally { setBusy(''); refresh.current(); }
   }
   const scan = state?.scan, download = state?.download;
+  const update = state?.update, updateWorker = state?.updateWorker;
   const scanning = scan?.current?.[0], current = download?.current?.[0], transfer = current?.transfer;
   const running = state?.running, status = busy === 'start' ? 'starting' : busy === 'stop' ? 'stopping' : state?.status;
   const scanPercent = scan?.total ? Math.min(100, scan.processed / scan.total * 100) : 0;
+  const updatePercent = update?.total ? Math.min(100, update.checked / update.total * 100) : 0;
   const activeTransfer = running && current && !state.stopping;
   const unknownTransfer = activeTransfer && (!transfer || transfer.percent == null);
   const downloadText = !running ? '断点已保留，启动后继续' : current ? phaseLabels[transfer?.phase] || '等待请求间隔' : '等待扫描发现可下载书籍';
@@ -75,12 +77,23 @@ export default function WorkerPanel({ onUnauthorized }) {
         <div className="worker-progress-note"><span>{activeTransfer && transfer?.receivedBytes ? bytes(transfer.receivedBytes) + (transfer.totalBytes ? ' / ' + bytes(transfer.totalBytes) : ' · 总大小未知') : '任务随扫描持续加入'}</span><span>待下载 <b>{number(download?.pending)}</b> 本</span></div>
       </div>
     </div>
-    <div className="worker-footer"><div><span>已上架 <b>{number(state?.progress?.published)}</b> 本</span><span>缺失 {number(state?.progress?.missing)}</span><span>失败 {number(state?.progress?.failed)}</span></div><span>请求间隔 {state?.interval?.minSeconds ?? 3}–{state?.interval?.maxSeconds ?? 8} 秒 · 每 2 秒更新</span></div>
-    {state?.discovery?.enabled && <div className="worker-discovery"><strong>自动发现新编号已开启</strong><span>{state.discovery.status === 'checking' && running ? '正在检查新书列表…' : state.discovery.message || (state.discovery.knownMaxId ? '最近发现最大编号 #' + number(state.discovery.knownMaxId) : '启动后自动检查新书列表')}{state.discovery.nextCheckAt && running ? ' · 下次检查 ' + time(state.discovery.nextCheckAt) : ''}</span><p>当前进度按已知范围计算；发现更高编号后自动扩展并接入下载，无需手动追加。</p></div>}
+    <div className="worker-lane worker-update-lane">
+      <div className="worker-update-heading"><div className="worker-lane-label"><RefreshCw size={16}/><h3>书籍更新</h3></div><span className="worker-update-state">{updateWorker?.current?.[0]?.updateCheck ? '正在检测' : updateWorker?.current?.[0]?.updating ? '正在更新' : update?.pending ? '等待更新' : running && update?.total && update?.checked >= update.total ? '本轮完成' : running ? '等待检查' : '已停止'}</span></div>
+      <div className="worker-update-current"><strong>{updateWorker?.current?.[0]?.title ? '《' + updateWorker.current[0].title + '》' : update?.pending ? '有 ' + number(update.pending) + ' 本书等待更新' : running && update?.total && update?.checked >= update.total ? '本轮书籍检查完成' : running ? '正在检查已入库书籍' : '启动后检查已入库书籍'}</strong></div>
+      <progress aria-label="书籍更新检测进度" value={update?.checked || 0} max={update?.total || 1}/>
+      <div className="worker-update-stats">
+        <div><span>已检查</span><strong>{number(update?.checked)}<small> / {number(update?.total)}</small></strong></div>
+        <div><span>已是最新</span><strong>{number(update?.upToDate)}</strong></div>
+        <div><span>需更新</span><strong>{number(update?.pending)}</strong></div>
+        <div><span>已经更新</span><strong>{number(update?.updated)}</strong></div>
+      </div>
+    </div>
+    <div className="worker-footer"><div><span>已上架 <b>{number(state?.progress?.published)}</b></span><span>缺失 <b>{number(state?.progress?.missing)}</b></span><span>失败 <b>{number(state?.progress?.failed)}</b></span></div><span>请求间隔 {state?.interval?.minSeconds ?? 3}–{state?.interval?.maxSeconds ?? 8} 秒</span></div>
+    {state?.discovery?.enabled && <div className="worker-discovery"><strong>新编号发现</strong><span>{state.discovery.status === 'checking' && running ? '正在检查' : state.discovery.message || '已开启'}</span><span>已发现至 #{number(state.discovery.knownMaxId)}</span>{state.discovery.nextCheckAt && running && <span>下次 {time(state.discovery.nextCheckAt)}</span>}</div>}
     {state?.needsAuthentication && <p className="worker-notice">登录态需要更新。请更新本机 Cookie 文件，后台会自动恢复。</p>}
     {state?.status === 'cooldown' && <p className="worker-notice">站点要求限速，等待至 {time(state.cooldownUntil)} 后自动继续。</p>}
     {state?.status === 'config_error' && <p className="worker-notice">任务配置暂不可读取，请检查本机下载队列文件。</p>}
     {error && <div className="form-error worker-error" role="alert">{error}<button className="text-button" onClick={() => refresh.current()}>重新连接</button></div>}
-    <details className="worker-details"><summary>最近任务记录<span>后台更新于 {time(state?.heartbeatAt)}</span></summary><ul>{state?.activity?.length ? state.activity.map(item => <li key={item.id}><time>{time(item.at)}</time><span>{item.title}</span><em>{item.status === 'published' ? '已上架' : item.status === 'discovered' ? '资料已保存' : item.status === 'failed' ? '失败' : item.status === 'missing' ? '来源缺失' : '处理中'}{item.code ? ' · ' + item.code : ''}</em></li>) : <li>暂无任务记录</li>}</ul></details>
+    <details className="worker-details"><summary>最近任务记录<span>{time(state?.heartbeatAt)}</span></summary><ul>{state?.activity?.length ? state.activity.map(item => <li key={item.id}><time>{time(item.at)}</time><span>{item.title}</span><em>{item.status === 'published' ? item.updated ? '已更新' : '已上架' : item.status === 'discovered' ? '资料已保存' : item.status === 'failed' ? '失败' : item.status === 'missing' ? '来源缺失' : '处理中'}{item.code ? ' · ' + item.code : ''}</em></li>) : <li>暂无任务记录</li>}</ul></details>
   </section>;
 }

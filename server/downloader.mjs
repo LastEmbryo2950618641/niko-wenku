@@ -133,6 +133,6 @@ async function downloadSelectedBook(root, input, selected, options) {
   }
   options.signal?.throwIfAborted();
   await options.onProgress?.({ phase: 'publishing', receivedBytes: size, totalBytes: size });
-  const receipt = await publishBundle(root, manifest, buffers);
+  const receipt = await publishBundle(root, manifest, buffers, { replaceExisting: options.replaceExisting === true });
   return { ...receipt, language: selected.language || 'und', encoding: decoded.encoding, ...(cover ? { cover } : {}) };
 }

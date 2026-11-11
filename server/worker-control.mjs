@@ -35,7 +35,7 @@ export function createWorkerController({ queuePath, libraryRoot, stateDir }) {
       const current = running ? (raw.activeBookIds || []).slice(0, 2).map(id => {
         const book = state?.books?.[id] || {}, transfer = book.transfer;
         const total = count(transfer?.totalBytes) || null, received = count(transfer?.receivedBytes);
-        return { id: label(id), title: label(book.title) || label(id), ...(transfer ? { transfer: {
+        return { id: label(id), title: label(book.title) || label(id), updateCheck: book.updateChecking === true, updating: book.updateExisting === true && book.status !== 'discovering', ...(transfer ? { transfer: {
           phase: label(transfer.phase), receivedBytes: received, totalBytes: total,
           percent: total ? Math.min(100, Math.round(received / total * 1000) / 10) : null,
           updatedAt: label(transfer.updatedAt)
@@ -43,12 +43,12 @@ export function createWorkerController({ queuePath, libraryRoot, stateDir }) {
       }) : [];
       return { capacity: count(raw.capacity ?? queue?.workerSlots?.[name] ?? queue?.concurrency ?? 1), status: !running ? 'stopped' : stopping ? 'stopping' : label(raw.status) || 'starting', pending: count(raw.pending), completed: count(raw.completed), current };
     }
-    const scan = lane('scan'), download = lane('download');
+    const scan = lane('scan'), download = lane('download'), updateWorker = lane('update');
     scan.total = ranges.reduce((sum, range) => sum + Math.max(0, range.endId - range.startId + 1), 0);
     scan.processed = ranges.reduce((sum, range) => sum + Math.max(0, Math.min(range.endId, range.lastCompletedId) - range.startId + 1), 0);
     scan.nextId = ranges.find(range => range.nextId != null)?.nextId ?? null;
     const progress = Object.fromEntries(['total', 'published', 'discovered', 'missing', 'failed', 'pending', 'downloading', 'discovering', 'retry_wait', 'auth_required'].map(key => [key, count(state?.progress?.[key])]));
-    const activity = Object.entries(state?.books || {}).filter(([, book]) => book.completedAt || book.failedAt).sort(([, a], [, b]) => (Date.parse(b.failedAt || b.completedAt) || 0) - (Date.parse(a.failedAt || a.completedAt) || 0)).slice(0, 6).map(([id, book]) => ({ id: label(id), title: label(book.title) || label(id), status: label(book.status), at: label(book.failedAt || book.completedAt), ...(book.error ? { code: typeof book.error.code === 'number' ? book.error.code : label(book.error.code), message: label(book.error.message) } : {}) }));
+    const activity = Object.entries(state?.books || {}).filter(([, book]) => book.completedAt || book.failedAt).sort(([, a], [, b]) => (Date.parse(b.failedAt || b.completedAt) || 0) - (Date.parse(a.failedAt || a.completedAt) || 0)).slice(0, 6).map(([id, book]) => ({ id: label(id), title: label(book.title) || label(id), status: label(book.status), updated: book.lastAction === 'updated', at: label(book.failedAt || book.completedAt), ...(book.error ? { code: typeof book.error.code === 'number' ? book.error.code : label(book.error.code), message: label(book.error.message) } : {}) }));
     return {
       available: true, running, stopping, pid: running ? lock.pid : null,
       status: stopping ? 'stopping' : running ? label(state?.status) || 'starting' : state ? 'stopped' : 'not_started',
@@ -56,7 +56,7 @@ export function createWorkerController({ queuePath, libraryRoot, stateDir }) {
       cooldownUntil: label(state?.cooldownUntil), needsAuthentication: Boolean(state?.authRequired),
       interval: { minSeconds: count(queue?.minDelaySeconds ?? 3), maxSeconds: count(queue?.maxDelaySeconds ?? 8) },
       discovery: { enabled: queue?.autoDiscover === true, status: label(state?.discovery?.status) || 'waiting', knownMaxId: count(state?.discovery?.knownMaxId), lastCheckedAt: label(state?.discovery?.lastCheckedAt), nextCheckAt: label(state?.discovery?.nextCheckAt), message: label(state?.discovery?.message), intervalSeconds: count(queue?.discoveryIntervalSeconds ?? 1800) },
-      scan, download, progress, scanCheckpoints: checkpoints, activity
+      scan, download, updateWorker, update: state?.updateProgress || { total: 0, checked: 0, upToDate: 0, pending: 0, updated: 0, currentBookId: null, currentTitle: '' }, progress, scanCheckpoints: checkpoints, activity
     };
   }
   async function command(action) {

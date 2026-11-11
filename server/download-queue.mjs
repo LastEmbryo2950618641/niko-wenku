@@ -58,8 +58,8 @@ export async function loadDownloadQueue(queuePath, { discoveredEndId = 0 } = {})
   if (!Number.isInteger(queue.maxAttempts) || !Number.isInteger(queue.concurrency) || queue.maxDelayMs < queue.minDelayMs) throw new Error('重试次数、并发数或随机间隔不合法');
   if (raw.workerSlots !== undefined) {
     const slots = raw.workerSlots;
-    if (!slots || typeof slots !== 'object' || Array.isArray(slots) || Object.keys(slots).some(key => !['scan', 'download'].includes(key)) || !['scan', 'download'].every(key => Number.isInteger(slots[key]) && slots[key] >= 0 && slots[key] <= 2) || slots.scan + slots.download !== queue.concurrency) throw new Error('workerSlots 必须包含 scan 和 download 整数容量，合计等于 concurrency');
-    queue.workerSlots = { scan: slots.scan, download: slots.download };
+    if (!slots || typeof slots !== 'object' || Array.isArray(slots) || Object.keys(slots).some(key => !['scan', 'download', 'update'].includes(key)) || !['scan', 'download'].every(key => Number.isInteger(slots[key]) && slots[key] >= 0 && slots[key] <= 2) || slots.scan + slots.download !== queue.concurrency || (slots.update !== undefined && ![0, 1].includes(slots.update))) throw new Error('workerSlots 必须包含 scan 和 download 容量且合计等于 concurrency；update 可设为 0 或 1');
+    queue.workerSlots = { scan: slots.scan, download: slots.download, update: slots.update ?? 1 };
   }
   const entries = (raw.books || []).map(entry => ({ entry, fromRange: false }));
   const metadataRanges = (raw.ranges || []).filter(range => range?.enabled !== false && range?.source === 'wenku8' && (range.mode ?? 'metadata') === 'metadata');

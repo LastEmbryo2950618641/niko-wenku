@@ -11,8 +11,13 @@ import {
 } from './download-queue.mjs';
 
 const timestamp = () => new Date().toISOString();
+const sourceUpdateSignature = book => {
+  const source = book?.source || {};
+  const values = [source.updatedAt || '', source.wordCount || '', source.latestChapter?.title || '', source.latestChapter?.url || ''];
+  return values.some(Boolean) ? JSON.stringify(values) : '';
+};
 const randomDelay = queue => queue.minDelayMs + Math.random() * (queue.maxDelayMs - queue.minDelayMs);
-const laneFor = (job, entry) => job.kind === 'wenku8' && job.mode === 'metadata' && !(job.autoDownload && entry?.scanCompletedAt) ? 'scan' : 'download';
+const laneFor = (job, entry) => entry?.updateChecking || entry?.updateExisting ? 'update' : job.kind === 'wenku8' && job.mode === 'metadata' && !(job.autoDownload && entry?.scanCompletedAt) ? 'scan' : 'download';
 const terminalScanStates = new Set(['discovered', 'published', 'missing', 'failed']);
 
 class QueueHold extends Error {}
@@ -24,11 +29,11 @@ async function downloadJob(job, queue, libraryRoot, stateDir, signal, beforeRequ
     try { credentials = await readCookieOptions(job.cookiesFile); }
     catch { throw new Error('无法读取 Cookie 文件，请更新本地 Cookie'); }
     network = await createNetwork({ proxy: job.proxy });
-    const options = { ...credentials, dispatcher: network.dispatcher, signal, beforeRequest, onProgress, minDelayMs: queue.minDelayMs, maxDelayMs: queue.maxDelayMs };
+    const options = { ...credentials, dispatcher: network.dispatcher, signal, beforeRequest, onProgress, minDelayMs: queue.minDelayMs, maxDelayMs: queue.maxDelayMs, replaceExisting: job.replaceExisting === true };
     let manifest = job.manifest;
     if (job.kind === 'wenku8') {
       await onProgress?.({ phase: 'metadata', receivedBytes: 0, totalBytes: null });
-      if (job.useCatalog) {
+      if (job.useCatalog && !job.checkUpdate) {
         try {
           const cached = await readJsonFile(join(stateDir, 'catalog', job.id + '.json'));
           if (cached.id === job.id && cached.source?.id === job.source.id) manifest = cached;
@@ -38,7 +43,7 @@ async function downloadJob(job, queue, libraryRoot, stateDir, signal, beforeRequ
         manifest = parseWenkuInfo(await fetchWenkuPage(job.source.infoUrl, options), job.source.id);
         await writeJsonAtomic(join(stateDir, 'catalog', job.id + '.json'), manifest);
       }
-      if (job.mode === 'metadata') return { kind: 'metadata', title: manifest.title, author: manifest.author };
+      if (job.mode === 'metadata') return { kind: 'metadata', title: manifest.title, author: manifest.author, manifest };
       if (!manifest.source.downloadPageUrl) throw new Error('资料页缺少完整 TXT 全本入口');
       await onProgress?.({ phase: 'download_page', receivedBytes: 0, totalBytes: null });
       manifest.downloadVariants = parseWenkuDownloads(await fetchWenkuPage(manifest.source.downloadPageUrl, options), job.source.id);
@@ -61,7 +66,7 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
   const library = createLibrary(libraryRoot);
   const attempted = new Set();
   const active = new Map();
-  let state, watcher, activeIds, currentJobs, fatalError, checkedCatalogThisRun = false;
+  let state, watcher, activeIds, currentJobs, fatalError, checkedCatalogThisRun = false, existingBooks = new Map();
   let libraryRevision = 0;
   let writes = Promise.resolve(), requests = Promise.resolve();
   async function checkStop() {
@@ -88,7 +93,7 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
       state.progress = counts;
     }
     if (currentJobs) {
-      const lanes = { scan: { pending: 0, completed: 0 }, download: { pending: 0, completed: 0 } };
+      const lanes = { scan: { pending: 0, completed: 0 }, download: { pending: 0, completed: 0 }, update: { pending: 0, completed: 0 } };
       for (const job of currentJobs.values()) {
         const entry = state.books[job.id], status = entry?.status;
         const name = laneFor(job, entry), lane = lanes[name];
@@ -98,10 +103,10 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
       }
       state.workers = Object.fromEntries(Object.entries(lanes).map(([name, counts]) => {
         const activeBookIds = [...active].filter(([, task]) => task.lane === name).map(([id]) => id);
-        const capacity = state.workerSlots?.[name] ?? state.concurrency;
+        const capacity = name === 'update' ? state.workerSlots?.update ?? 1 : state.workerSlots?.[name] ?? state.concurrency;
         const status = !state.running || state.status === 'stopped' ? 'stopped'
           : ['paused', 'auth_required', 'cooldown', 'config_error'].includes(state.status) ? state.status
-          : activeBookIds.length ? name === 'scan' ? 'scanning' : 'downloading'
+          : activeBookIds.length ? name === 'scan' ? 'scanning' : name === 'update' ? 'checking_or_updating' : 'downloading'
           : capacity === 0 ? 'disabled' : counts.pending ? 'waiting_for_slot' : 'waiting_for_tasks';
         return [name, { capacity, status, activeBookIds, ...counts }];
       }));
@@ -113,6 +118,21 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
         }
         return { source: range.source, startId: range.startId, endId: range.endId, lastCompletedId: nextId - 1, nextId: nextId <= range.endId ? nextId : null };
       });
+      const updateJobs = [...currentJobs.values()].filter(job => job.kind === 'wenku8');
+      if (state.updateTargetsRun !== state.runStartedAt) {
+        state.updateTargetIds = updateJobs.filter(job => existingBooks.has(job.id)).map(job => job.id);
+        state.updateTargetsRun = state.runStartedAt;
+      }
+      const updateEntries = (state.updateTargetIds || []).map(id => state.books[id] || {});
+      state.updateProgress = {
+        total: (state.updateTargetIds || []).length,
+        checked: updateEntries.filter(entry => entry.updateCheckRun === state.runStartedAt).length,
+        upToDate: updateEntries.filter(entry => entry.updateCheckRun === state.runStartedAt && !entry.updateExisting && entry.status === 'published').length,
+        pending: updateEntries.filter(entry => entry.updateExisting).length,
+        updated: updateEntries.filter(entry => entry.lastUpdatedRun === state.runStartedAt).length,
+        currentBookId: [...active].find(([, task]) => task.lane === 'update')?.[0] || null,
+        currentTitle: state.books[[...active].find(([, task]) => task.lane === 'update')?.[0]]?.title || ''
+      };
     }
     const snapshot = structuredClone(state);
     const write = writes.then(() => writeJsonAtomic(statePath, snapshot));
@@ -194,7 +214,7 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
     delete entry.nextAttemptAt;
     state.status = entry.status;
     const cookieRevision = await credentialRevision(job.cookiesFile);
-    attempted.add(laneFor(job) + ':' + job.id);
+    if (!job.checkUpdate) attempted.add(laneFor(job, entry) + ':' + job.id);
     try {
       await save();
       await emit(entry.status, { id: job.id, attempt: entry.attempts });
@@ -203,12 +223,31 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
         await save();
       });
       if (receipt.kind === 'metadata') {
-        Object.assign(entry, { status: 'discovered', title: receipt.title, author: receipt.author, completedAt: timestamp(), scanCompletedAt: timestamp() });
-        if (job.autoDownload) entry.attempts = 0;
+        if (job.checkUpdate) {
+          const published = job.existingBook;
+          const signature = sourceUpdateSignature(receipt.manifest);
+          const previousSignature = sourceUpdateSignature({ updatedAt: published?.source?.updatedAt, source: published?.source });
+          entry.sourceSignature = signature;
+          entry.updateCheckedAt = timestamp();
+          entry.updateCheckRun = state.runStartedAt;
+          entry.updateChecking = false;
+          if (signature && signature !== previousSignature) {
+            Object.assign(entry, { status: 'pending', title: receipt.title, author: receipt.author, updateExisting: true, attempts: 0 });
+            entry.fingerprint = job.fingerprint;
+            await writeJsonAtomic(join(stateDir, 'catalog', job.id + '.json'), receipt.manifest);
+          } else {
+            Object.assign(entry, { status: 'published', title: receipt.title, author: receipt.author, fingerprint: job.fingerprint });
+            delete entry.error;
+          }
+        } else {
+          Object.assign(entry, { status: 'discovered', title: receipt.title, author: receipt.author, completedAt: timestamp(), scanCompletedAt: timestamp() });
+          if (job.autoDownload) entry.attempts = 0;
+        }
       }
       else {
         libraryRevision++;
-        Object.assign(entry, { status: 'published', language: receipt.language, encoding: receipt.encoding, bytes: receipt.bytes, sha256: receipt.sha256, chapters: receipt.chapters, completedAt: timestamp() });
+        const wasUpdate = entry.updateExisting === true;
+        Object.assign(entry, { status: 'published', language: receipt.language, encoding: receipt.encoding, bytes: receipt.bytes, sha256: receipt.sha256, chapters: receipt.chapters, completedAt: timestamp(), lastAction: wasUpdate ? 'updated' : 'published', ...(wasUpdate ? { lastUpdatedRun: state.runStartedAt } : {}), updateExisting: false, updateChecking: false });
       }
       if (receipt.cover) {
         entry.cover = receipt.cover;
@@ -226,6 +265,7 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
       if (receipt.cover) await emit(receipt.cover.status === 'downloaded' ? 'cover_saved' : 'cover_skipped', { id: job.id });
     } catch (error) {
       if (taskSignal.aborted || error instanceof QueueHold) {
+        if (job.checkUpdate) entry.updateChecking = false;
         if (!['published', 'discovered'].includes(entry.status)) {
           entry.status = 'pending';
           entry.attempts = Math.max(0, entry.attempts - 1);
@@ -234,6 +274,15 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
         return;
       }
       const failure = classifyDownloadFailure(error);
+      if (job.checkUpdate) entry.updateChecking = false;
+      if (job.checkUpdate && failure.kind !== 'auth' && error.status !== 429) {
+        entry.updateCheckError = failure.message;
+        entry.updateCheckRun = state.runStartedAt;
+        entry.status = 'published';
+        await save();
+        await emit('update_check_failed', { id: job.id, message: failure.message });
+        return;
+      }
       entry.error = { kind: failure.kind, code: failure.code, message: failure.message };
       entry.failedAt = timestamp();
       state.lastFinishedAt = timestamp();
@@ -269,6 +318,8 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
       ...previous, version: 1, running: true, pid: process.pid, startedAt: timestamp(),
       queuePath, libraryRoot, status: 'starting', books: Object.assign(Object.create(null), previous?.books)
     };
+    state.runStartedAt = timestamp();
+    state.updateChecksComplete = false;
     for (const entry of Object.values(state.books)) {
       if (['downloading', 'discovering'].includes(entry.status)) { entry.status = 'pending'; entry.attempts = Math.max(0, (entry.attempts || 1) - 1); }
     }
@@ -298,7 +349,7 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
       // A task can publish while the filesystem scan is awaiting I/O. Do not
       // reset that publication to pending using an older directory snapshot.
       if (revisionBeforeScan !== libraryRevision) continue;
-      const existing = new Map(snapshot.books.map(book => [book.id, book]));
+      existingBooks = new Map(snapshot.books.map(book => [book.id, book]));
       state.queueSize = queue.jobs.length;
       state.concurrency = queue.concurrency;
       state.workerSlots = queue.workerSlots;
@@ -308,16 +359,18 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
       state.libraryCount = snapshot.books.length;
       for (const job of queue.jobs) {
         if (active.has(job.id)) continue;
-        const published = existing.get(job.id);
+        const published = existingBooks.get(job.id);
         let entry = state.books[job.id];
         if (job.autoDownload && entry?.status === 'discovered' && !entry.scanCompletedAt) {
           entry.scanCompletedAt = entry.completedAt || timestamp();
           entry.attempts = 0;
         }
         if (published) {
-          state.books[job.id] = { ...entry, status: 'published', fingerprint: job.fingerprint, title: published.title, language: published.language, encoding: published.encoding, bytes: published.bytes };
-          delete state.books[job.id].error;
-          delete state.books[job.id].nextAttemptAt;
+          state.books[job.id] = { ...entry, status: entry?.updateExisting ? entry.status : 'published', fingerprint: job.fingerprint, title: published.title, language: published.language, encoding: published.encoding, bytes: published.bytes };
+          if (!entry?.updateExisting) {
+            delete state.books[job.id].error;
+            delete state.books[job.id].nextAttemptAt;
+          }
         } else if (!entry || entry.fingerprint !== job.fingerprint || entry.status === 'published') {
           state.books[job.id] = { status: 'pending', fingerprint: job.fingerprint, attempts: 0, title: job.manifest?.title || job.id };
         }
@@ -325,8 +378,8 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
       if (state.authRequired && !active.size) {
         const auth = state.authRequired;
         const job = queue.jobs.find(item => item.id === auth.bookId);
-        if (!job || (!auth.sourceDiscovery && existing.has(job.id)) || await credentialRevision(job.cookiesFile) !== auth.credentialRevision || JSON.stringify(queue.resumeToken) !== auth.resumeToken) {
-          if (job && !existing.has(job.id) && !auth.sourceDiscovery) {
+        if (!job || (!auth.sourceDiscovery && existingBooks.has(job.id)) || await credentialRevision(job.cookiesFile) !== auth.credentialRevision || JSON.stringify(queue.resumeToken) !== auth.resumeToken) {
+          if (job && !existingBooks.has(job.id) && !auth.sourceDiscovery) {
             Object.assign(state.books[job.id], { status: 'pending', attempts: 0 });
             delete state.books[job.id].error;
           }
@@ -365,11 +418,47 @@ export async function runDownloadWorker({ queuePath, libraryRoot, stateDir, once
       const job = queue.jobs.find(item => {
         const entry = state.books[item.id];
         const lane = laneFor(item, entry);
+        if (lane === 'update') return false;
         if (queue.workerSlots && [...active.values()].filter(task => task.lane === lane).length >= queue.workerSlots[lane]) return false;
-        return !active.has(item.id) && !existing.has(item.id) && !(once && attempted.has(lane + ':' + item.id)) &&
+        return !active.has(item.id) && (!existingBooks.has(item.id) || entry.updateExisting) && !(once && attempted.has(lane + ':' + item.id)) &&
           (entry.status === 'pending' || (lane === 'download' && entry.status === 'discovered') || (entry.status === 'retry_wait' && Date.parse(entry.nextAttemptAt) <= Date.now()));
       });
-      if (!job || active.size >= queue.concurrency) {
+      const updateCheckJob = !state.updateChecksComplete && queue.jobs.find(item => {
+        const published = existingBooks.get(item.id);
+        const entry = state.books[item.id];
+        return item.kind === 'wenku8' && published && !active.has(item.id) && entry.updateCheckStartedRun !== state.runStartedAt;
+      });
+      const updateCapacity = queue.workerSlots?.update ?? 1;
+      const activeUpdates = [...active.values()].filter(task => task.lane === 'update').length;
+      const updateJob = updateCheckJob || queue.jobs.find(item => {
+        const entry = state.books[item.id];
+        return laneFor(item, entry) === 'update' && !entry.updateChecking && !active.has(item.id) && !(once && attempted.has('update:' + item.id)) &&
+          (entry.status === 'pending' || (entry.status === 'retry_wait' && Date.parse(entry.nextAttemptAt) <= Date.now()));
+      });
+      if (updateJob && updateCapacity > activeUpdates) {
+        const check = updateJob === updateCheckJob;
+        const book = check ? existingBooks.get(updateJob.id) : null;
+        const checkJob = check ? { ...updateJob, mode: 'metadata', checkUpdate: true, existingBook: book, useCatalog: false } :
+          { ...updateJob, mode: 'download', useCatalog: true, replaceExisting: true };
+        if (check) {
+          state.books[checkJob.id].updateCheckStartedRun = state.runStartedAt;
+          state.books[checkJob.id].updateChecking = true;
+        }
+        const taskController = new AbortController();
+        active.set(checkJob.id, { controller: taskController, promise: null, lane: 'update' });
+        const task = active.get(checkJob.id);
+        task.promise = processJob(checkJob, queue, taskController).finally(async () => {
+          active.delete(checkJob.id);
+          await save();
+        }).catch(error => { fatalError = error; controller.abort(); });
+        continue;
+      }
+      if (updateCheckJob && updateCapacity > 0) {
+        if (active.size) { await waitForWork(queue.pollMs); continue; }
+      }
+      if (!updateCheckJob) state.updateChecksComplete = true;
+      const activeMain = [...active.values()].filter(task => task.lane !== 'update').length;
+      if (!job || activeMain >= queue.concurrency) {
         if (active.size) {
           await waitForWork(queue.pollMs);
           if (fatalError) throw fatalError;

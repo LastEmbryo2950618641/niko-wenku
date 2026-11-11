@@ -2,7 +2,7 @@
   "version": 1,
   "paused": true,
   "concurrency": 2,
-  "workerSlots": { "scan": 1, "download": 1 },
+  "workerSlots": { "scan": 1, "download": 1, "update": 1 },
   "minDelaySeconds": 3,
   "maxDelaySeconds": 8,
   "pollSeconds": 15,

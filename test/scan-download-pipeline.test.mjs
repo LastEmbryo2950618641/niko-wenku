@@ -90,7 +90,7 @@ test('enabling handoff drains already discovered IDs without resetting the scan 
   assert.deepEqual(requests.filter(r => r.path === '/modules/article/articleinfo.php').map(r => r.id), [901, 902, 903]);
   const count = requests.length;
   await runDownloadWorker({ ...f, once: true });
-  assert.equal(requests.length, count);
+  assert.equal(requests.length, count + 3);
 });
 
 test('interrupted handoff retries the download without rescanning a completed ID', async t => {

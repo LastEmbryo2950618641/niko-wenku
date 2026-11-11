@@ -271,14 +271,16 @@ export function createLibrary(rootPath, { indexPath } = {}) {
     }
   };
 }
-export async function publishBundle(rootPath, supplied, buffers) {
+export async function publishBundle(rootPath, supplied, buffers, { replaceExisting = false } = {}) {
   const raw = structuredClone(supplied);
   const files = validateManifest(raw);
   const root = resolve(rootPath);
   await mkdir(root, { recursive: true });
   const destination = join(root, raw.id);
-  try { await stat(destination); throw new ArchiveError('书籍 id 已存在，请更换 id 或直接更新该书目录', 409); }
+  let previousExists = false;
+  try { await stat(destination); previousExists = true; }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (previousExists && !replaceExisting) throw new ArchiveError('书籍 id 已存在，请更换 id 或直接更新该书目录', 409);
   for (const name of Object.values(files)) checkedPath(destination, name);
   for (const [name, buffer] of Object.entries(buffers)) {
     checkedPath(destination, name);
@@ -291,6 +293,13 @@ export async function publishBundle(rootPath, supplied, buffers) {
   raw.wordCount = document.wordCount;
   raw.chapterCount = document.chapters.length;
   raw.addedAt ??= new Date().toISOString();
+  let previousRaw;
+  if (previousExists) {
+    try { previousRaw = JSON.parse(await readFile(join(destination, 'book.json'), 'utf8')); }
+    catch { throw new ArchiveError('无法读取现有书籍元数据，未替换原书', 409); }
+    raw.addedAt = previousRaw.addedAt ?? previousRaw.importedAt ?? raw.addedAt;
+    for (const [key, value] of Object.entries(previousRaw)) if (!Object.hasOwn(raw, key) && !['files', 'integrity'].includes(key)) raw[key] = value;
+  }
   raw.integrity = { ...raw.integrity, sha256: createHash('sha256').update(buffers[files.text]).digest('hex') };
   const staging = join(root, '.import-' + randomUUID());
   await mkdir(staging);
@@ -301,7 +310,13 @@ export async function publishBundle(rootPath, supplied, buffers) {
       await writeFile(path, buffer, { flag: 'wx' });
     }
     await writeFile(join(staging, 'book.json'), JSON.stringify(raw, null, 2) + '\n', { flag: 'wx' });
-    await rename(staging, destination);
+    if (previousExists) {
+      const backup = join(root, '.replace-' + randomUUID());
+      await rename(destination, backup);
+      try { await rename(staging, destination); }
+      catch (error) { await rename(backup, destination); throw error; }
+      await rm(backup, { recursive: true, force: true });
+    } else await rename(staging, destination);
   } catch (error) { await rm(staging, { recursive: true, force: true }); throw error; }
   return { id: raw.id, directory: destination, bytes: buffers[files.text].length, sha256: raw.integrity.sha256, chapters: raw.chapterCount };
 }

@@ -77,7 +77,7 @@ test('one worker start discovers higher IDs, publishes one language and resumes 
   assert.equal(result.discovery.knownMaxId, 45);
   assert.equal(result.discovery.status, 'retry_wait');
   assert.equal(result.scanCheckpoints[0].nextId, null);
-  assert.deepEqual(requests.filter(r => r.path === '/modules/article/articleinfo.php').map(r => r.id), [...previousScans, 44, 45]);
+  assert.deepEqual(requests.filter(r => r.path === '/modules/article/articleinfo.php').map(r => r.id), [...previousScans, 41, 44, 45]);
   assert.equal((await createLibrary(f.libraryRoot).scan()).books.length, 5);
   assert.equal(requests.filter(r => r.path === '/down.php').every(r => r.type === 'utf8'), true);
 });

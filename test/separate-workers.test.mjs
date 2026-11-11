@@ -114,8 +114,8 @@ test('an empty download lane reports waiting for tasks while the scan lane compl
 
 test('dedicated slot settings must be integer capacities matching the total concurrency', async t => {
   const f = await fixture(t, { books: [] });
-  assert.deepEqual((await loadDownloadQueue(f.queuePath)).workerSlots, { scan: 1, download: 1 });
-  for (const workerSlots of [{ scan: 2, download: 1 }, { scan: 0.5, download: 1.5 }, { scan: -1, download: 3 }, { scans: 1, download: 1 }]) {
+  assert.deepEqual((await loadDownloadQueue(f.queuePath)).workerSlots, { scan: 1, download: 1, update: 1 });
+  for (const workerSlots of [{ scan: 2, download: 1 }, { scan: 0.5, download: 1.5 }, { scan: -1, download: 3 }, { scans: 1, download: 1 }, { scan: 1, download: 1, update: 2 }]) {
     await writeFile(f.queuePath, JSON.stringify({ books: [], concurrency: 2, workerSlots }));
     await assert.rejects(() => loadDownloadQueue(f.queuePath));
   }
