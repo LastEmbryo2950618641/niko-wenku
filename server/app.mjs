@@ -1,13 +1,13 @@
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat, readFile, realpath } from 'node:fs/promises';
-import { resolve, join, relative, extname, isAbsolute } from 'node:path';
+import { resolve, join, relative, extname, isAbsolute, dirname } from 'node:path';
+import { createHash } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { createLibrary, publishBundle, ArchiveError } from './library.mjs';
 import { createWorkerController } from './worker-control.mjs';
 import { createAdminAuth } from './admin-auth.mjs';
 import { createCaptchaService } from './captcha.mjs';
-import { languageRank } from '../shared/language.mjs';
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.avif': 'image/avif', '.gif': 'image/gif', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 function json(res, status, value) {
@@ -35,7 +35,7 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
     if (dev) throw new Error('公开部署请先构建前端，不使用开发服务器');
   }
   const adminAuth = await createAdminAuth(adminAuthFile, captchaService);
-  const library = createLibrary(libraryRoot);
+  const library = createLibrary(libraryRoot, { indexPath: join(worker?.stateDir || join(dirname(resolve(libraryRoot)), '.state'), 'library-index.json') });
   const workerControl = worker ? createWorkerController({ ...worker, libraryRoot }) : null;
   const publicRoot = resolve(webRoot);
   const vite = dev ? await (await import('vite')).createServer({
@@ -87,15 +87,18 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
       }
       if (url.pathname === '/api/health') return json(res, 200, { ok: true, name: '文库档案' });
       if (url.pathname === '/api/library' && req.method === 'GET') {
-        const catalog = await library.scan({ maxAgeMs: url.searchParams.get('refresh') === '1' ? 0 : 4000 });
-        if (url.searchParams.get('preview') === '1') {
-          const books = [...catalog.books].sort((a, b) => languageRank(a.language) - languageRank(b.language) || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0)).slice(0, 24);
-          return json(res, 200, { ...catalog, books, partial: books.length < catalog.books.length, libraryPath: publicUrl ? 'library/' : catalog.libraryPath });
-        }
-        const etag = '"' + catalog.revision + '"';
+        const catalog = await library.scan({ maxAgeMs: 30000, waitForRefresh: url.searchParams.get('refresh') === '1' });
+        const page = Math.max(1, Math.min(1000000, Number.parseInt(url.searchParams.get('page') || '1', 10) || 1));
+        const pageSize = Math.max(1, Math.min(48, Number.parseInt(url.searchParams.get('pageSize') || '24', 10) || 24));
+        const recentIds = (url.searchParams.get('recentIds') || '').split(',').filter(Boolean).slice(0, 500);
+        const result = library.list({ page, pageSize, query: url.searchParams.get('q') || '', category: url.searchParams.get('category') || '', sort: url.searchParams.get('sort') || 'language', completed: url.searchParams.get('completed') === '1', recentOnly: url.searchParams.get('recent') === '1', recentIds });
+        const etagParams = new URLSearchParams(url.searchParams);
+        etagParams.delete('refresh');
+        const queryKey = createHash('sha1').update(etagParams.toString()).digest('hex');
+        const etag = '"' + catalog.revision + '-' + queryKey + '"';
         res.setHeader('ETag', etag);
         if (String(req.headers['if-none-match'] || '').split(',').some(value => value.trim().replace(/^W\//, '') === etag || value.trim() === '*')) { res.writeHead(304, { 'Cache-Control': 'no-cache' }); return res.end(); }
-        return json(res, 200, publicUrl ? { ...catalog, libraryPath: 'library/' } : catalog);
+        return json(res, 200, { ...result, libraryPath: publicUrl ? 'library/' : catalog.libraryPath, partial: result.total > result.books.length });
       }
       if (url.pathname === '/api/worker/status' && req.method === 'GET') return json(res, 200, workerControl ? await workerControl.status() : { available: false, running: false, status: 'unavailable' });
       if (['/api/worker/start', '/api/worker/stop'].includes(url.pathname) && req.method === 'POST') {

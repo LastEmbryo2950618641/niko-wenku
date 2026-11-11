@@ -2,6 +2,7 @@ import { readFile, writeFile, readdir, mkdir, stat, realpath, rename, rm } from 
 import { resolve, relative, dirname, basename, extname, isAbsolute, join } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { decodeBook, indexBook } from './text.mjs';
+import { languageRank } from '../shared/language.mjs';
 
 export class ArchiveError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -83,12 +84,41 @@ async function mapLimit(items, concurrency, visit) {
   }));
   return results;
 }
-export function createLibrary(rootPath) {
+export function createLibrary(rootPath, { indexPath } = {}) {
   const root = resolve(rootPath);
+  const savedIndexPath = indexPath ? resolve(indexPath) : null;
   const documentCache = new Map();
   const manifestCache = new Map();
   let entriesById = new Map();
-  let scanInFlight, catalogSnapshot, scannedAtMs = 0;
+  let scanInFlight, catalogSnapshot, scannedAtMs = 0, indexLoaded = false, invalidated = false, rootSignature = '';
+  async function currentRootSignature() {
+    try { const info = await stat(root); return [info.mtimeMs, info.ctimeMs, info.ino].join(':'); }
+    catch (error) { if (error.code === 'ENOENT') return ''; throw error; }
+  }
+  async function loadIndex() {
+    if (indexLoaded || !savedIndexPath) return;
+    indexLoaded = true;
+    try {
+      const saved = JSON.parse(await readFile(savedIndexPath, 'utf8'));
+      if (saved.version !== 1 || saved.root !== root || !Array.isArray(saved.books) || !saved.stats || typeof saved.revision !== 'string') return;
+      const books = saved.books.filter(item => item && item.book && typeof item.manifest === 'string' && !isAbsolute(item.manifest) && !item.manifest.split(/[\\/]/).includes('..'));
+      entriesById = new Map(books.map(item => [item.book.id, { manifestPath: resolve(root, item.manifest) }]));
+      catalogSnapshot = { books: books.map(item => item.book), invalidEntries: Array.isArray(saved.invalidEntries) ? saved.invalidEntries : [], libraryPath: root,
+        scannedAt: saved.scannedAt || new Date(0).toISOString(), revision: saved.revision, stats: saved.stats };
+      scannedAtMs = Date.parse(catalogSnapshot.scannedAt) || 0;
+      rootSignature = saved.rootSignature || '';
+    } catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; }
+  }
+  async function saveIndex(snapshot, entries) {
+    if (!savedIndexPath) return;
+    await mkdir(dirname(savedIndexPath), { recursive: true });
+    const books = snapshot.books.map(book => ({ book, manifest: relative(root, entries.get(book.id).manifestPath).replaceAll('\\', '/'), text: entries.get(book.id).files.text.name }));
+    const temp = savedIndexPath + '.' + randomUUID() + '.tmp';
+    try {
+      await writeFile(temp, JSON.stringify({ version: 1, root, rootSignature, scannedAt: snapshot.scannedAt, revision: snapshot.revision, stats: snapshot.stats, invalidEntries: snapshot.invalidEntries, books }));
+      await rename(temp, savedIndexPath);
+    } catch (error) { await rm(temp, { force: true }).catch(() => {}); throw error; }
+  }
   async function readEntry(path) {
         const manifestInfo = await stat(path);
         if (manifestInfo.size > 1024 * 1024) throw new ArchiveError('元数据 JSON 超过 1 MB');
@@ -156,14 +186,44 @@ export function createLibrary(rootPath) {
       stats: { total: books.length, completed: books.filter(book => book.completed).length, bytes: books.reduce((sum, book) => sum + book.bytes, 0), authors: new Set(books.map(book => book.author)).size }
     };
     scannedAtMs = Date.now();
+    rootSignature = await currentRootSignature();
+    await saveIndex(catalogSnapshot, nextEntries);
     return catalogSnapshot;
   }
-  async function scan({ maxAgeMs = 0 } = {}) {
+  async function rebuild() {
     if (scanInFlight) return scanInFlight;
-    if (catalogSnapshot && maxAgeMs > 0 && Date.now() - scannedAtMs < maxAgeMs) return catalogSnapshot;
     scanInFlight = rebuildCatalog();
     try { return await scanInFlight; }
-    finally { scanInFlight = null; }
+    finally { scanInFlight = null; invalidated = false; }
+  }
+  async function scan({ maxAgeMs = 0, waitForRefresh = false } = {}) {
+    await loadIndex();
+    if (!catalogSnapshot) return rebuild();
+    if (waitForRefresh || invalidated || maxAgeMs === 0) return rebuild();
+    if (Date.now() - scannedAtMs < maxAgeMs && await currentRootSignature() === rootSignature) return catalogSnapshot;
+    void rebuild().catch(error => console.error('书目索引更新失败：', error));
+    return catalogSnapshot;
+  }
+  function list({ page = 1, pageSize = 24, query = '', category = '', sort = 'language', completed = false, recentIds = [], recentOnly = false } = {}) {
+    const snapshot = catalogSnapshot || { books: [], invalidEntries: [], stats: { total: 0, completed: 0, bytes: 0, authors: 0 } };
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    const recent = new Set(recentIds);
+    const recentOrder = new Map(recentIds.map((id, index) => [id, index]));
+    const matching = snapshot.books.filter(book => {
+      const matches = !normalizedQuery || [book.title, book.originalTitle, book.author, book.description, ...book.tags].join(' ').toLocaleLowerCase().includes(normalizedQuery);
+      return matches && (!category || category === '全部' || book.category === category) && (!completed || book.completed) && (!recentOnly || recent.has(book.id));
+    });
+    matching.sort((a, b) => {
+      if (sort === 'recent') return (recentOrder.get(a.id) ?? Infinity) - (recentOrder.get(b.id) ?? Infinity);
+      if (sort === 'title') return a.title.localeCompare(b.title, 'zh-CN');
+      if (sort === 'added') return (Date.parse(b.addedAt) || 0) - (Date.parse(a.addedAt) || 0);
+      if (sort === 'updated') return (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0);
+      return languageRank(a.language) - languageRank(b.language) || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0);
+    });
+    const start = (page - 1) * pageSize;
+    return { ...snapshot, books: matching.slice(start, start + pageSize), total: matching.length,
+      categories: [...snapshot.books.reduce((counts, book) => counts.set(book.category, (counts.get(book.category) || 0) + 1), new Map())],
+      page, pageSize, pageCount: Math.max(1, Math.ceil(matching.length / pageSize)) };
   }
   async function entry(id) {
     if (!entriesById.has(id)) await scan();
@@ -185,7 +245,7 @@ export function createLibrary(rootPath) {
     return document;
   }
   return {
-    root, scan, invalidate() { scannedAtMs = 0; },
+    root, scan, list, invalidate() { scannedAtMs = 0; invalidated = true; },
     async detail(id) {
       const found = await entry(id);
       const document = await documentFor(found);

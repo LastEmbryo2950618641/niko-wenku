@@ -107,6 +107,21 @@ test('concurrent catalog requests share a scan and unchanged contents retain the
   assert.notEqual(changed.revision, a.revision);
 });
 
+test('catalog index persists summaries and text paths for fast restart, then refreshes on demand', async t => {
+  const root = await fixture(t), indexPath = join(root, '..', 'wenku-library-index-' + Date.now() + '.json');
+  t.after(() => rm(indexPath, { force: true }));
+  await dropBook(root, 'first');
+  const first = createLibrary(root, { indexPath });
+  await first.scan();
+  const saved = JSON.parse(await readFile(indexPath, 'utf8'));
+  assert.equal(saved.books[0].manifest, 'first/book.json');
+  assert.equal(saved.books[0].text, 'content.txt');
+  await dropBook(root, 'second');
+  const restarted = createLibrary(root, { indexPath });
+  assert.equal((await restarted.scan({ maxAgeMs: 60000 })).books.length, 1, 'fresh persisted metadata should be served without a directory walk');
+  assert.equal((await restarted.scan({ maxAgeMs: 0, waitForRefresh: true })).books.length, 2, 'explicit refresh should discover newly published files');
+});
+
 test('cover and chapter access validate only their book without discovering unrelated additions', async t => {
   const root = await fixture(t);
   await dropBook(root, 'first', { files: { text: 'content.txt', cover: 'cover.jpg' } });

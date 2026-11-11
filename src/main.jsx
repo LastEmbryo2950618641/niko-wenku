@@ -7,11 +7,11 @@ import { AdminAccess, AuthPage, useAdminSession } from './admin';
 import './style.css';
 import './pagination.css';
 import './category-filter.css';
-import { languageLabel, languageRank } from '../shared/language.mjs';
+import { languageLabel } from '../shared/language.mjs';
 import WorkerPanel from './worker-panel';
 
 const Reader = lazy(() => import('./reader'));
-const initialCatalog = { books: [], invalidEntries: [], stats: { total: 0, completed: 0, authors: 0, bytes: 0 } };
+const initialCatalog = { books: [], categories: [], invalidEntries: [], stats: { total: 0, completed: 0, authors: 0, bytes: 0 }, total: 0, pageCount: 1 };
 const pageSize = 24;
 
 function App() {
@@ -30,33 +30,36 @@ function App() {
   const [toast, setToast] = useState('');
   const search = useRef(null);
   const catalogRequest = useRef(null);
-  const catalogEtag = useRef('');
-  const previewShown = useRef(false);
+  const catalogEtag = useRef({ key: '', value: '' });
   const progress = useProgress();
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
+  const isRecent = route.page === 'recent';
+  const isCompleted = route.page === 'completed';
+  const recentIds = useMemo(() => Object.entries(progress).sort((a, b) => (b[1]?.visitedAt || 0) - (a[1]?.visitedAt || 0)).map(([id]) => id).slice(0, 500), [progress]);
   const reload = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
-    if (catalogRequest.current) {
-      if (manual) { await catalogRequest.current.promise; setRefreshing(false); }
-      return;
-    }
-    const request = { controller: new AbortController(), promise: null };
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), q: deferredQuery, category: category === '全部' ? '' : category, sort: isRecent ? 'recent' : sort });
+    if (isCompleted) params.set('completed', '1');
+    if (isRecent) { params.set('recent', '1'); params.set('recentIds', recentIds.join(',')); }
+    if (manual) params.set('refresh', '1');
+    const keyParams = new URLSearchParams(params);
+    keyParams.delete('refresh');
+    const key = keyParams.toString();
+    if (!manual && catalogRequest.current?.key === key) return;
+    catalogRequest.current?.controller.abort();
+    const request = { key, controller: new AbortController(), promise: null };
     catalogRequest.current = request;
     request.promise = (async () => {
     try {
       const signal = AbortSignal.any([request.controller.signal, AbortSignal.timeout(30000)]);
-      if (!previewShown.current && !catalogEtag.current) {
-        const previewResponse = await fetch(appUrl('/api/library?preview=1'), { signal });
-        const preview = await previewResponse.json();
-        if (!previewResponse.ok) throw new Error(preview.error || '书库加载失败');
-        setCatalog(preview); setLoading(false); previewShown.current = true;
-      }
-      const response = await fetch(appUrl('/api/library' + (manual ? '?refresh=1' : '')), { signal, headers: catalogEtag.current && !manual ? { 'If-None-Match': catalogEtag.current } : {} });
+      const etag = catalogEtag.current.key === key ? catalogEtag.current.value : '';
+      const response = await fetch(appUrl('/api/library?' + params), { signal, headers: etag && !manual ? { 'If-None-Match': etag } : {} });
+      if (catalogRequest.current !== request) return;
       if (response.status !== 304) {
         const next = await response.json();
         if (!response.ok) throw new Error(next.error || '书库加载失败');
-        catalogEtag.current = response.headers.get('ETag') || '';
-        setCatalog(previous => !previous.partial && previous.revision && previous.revision === next.revision ? previous : next);
+        catalogEtag.current = { key, value: response.headers.get('ETag') || '' };
+        setCatalog(next);
       }
       setError('');
     }
@@ -65,7 +68,7 @@ function App() {
     })();
     try { await request.promise; }
     finally { if (catalogRequest.current === request) catalogRequest.current = null; }
-  }, []);
+  }, [page, deferredQuery, category, isRecent, isCompleted, recentIds, sort]);
   useEffect(() => {
     void reload();
     const interval = window.setInterval(() => { if (!document.hidden) void reload(); }, 5000);
@@ -85,31 +88,16 @@ function App() {
   useEffect(() => {
     if (route.page !== 'read') document.title = route.page === 'tasks' ? '扫描与下载 · 文库档案' : route.page === 'register' ? '注册账号 · 文库档案' : route.page === 'login' ? '登录 · 文库档案' : admin.public ? '文库档案 · 共享书库' : '文库档案 · 本地书库';
   }, [route.page, admin.public]);
-  const categories = useMemo(() => {
-    const counts = new Map();
-    for (const book of catalog.books) counts.set(book.category, (counts.get(book.category) || 0) + 1);
-    return [...counts];
-  }, [catalog.books]);
-  const isRecent = route.page === 'recent';
-  const isCompleted = route.page === 'completed';
+  const categories = catalog.categories || [];
   const isTasks = route.page === 'tasks';
   const canManage = admin.ready && admin.canManage;
   const isPublic = admin.public === true;
   function openImport() { if (canManage) setImportOpen(true); else { navigate('/tasks'); setSidebarOpen(false); } }
   async function logout() { try { await admin.logout(); setImportOpen(false); } catch (reason) { setToast(reason.message); } }
-  const filtered = useMemo(() => catalog.books.filter(book => {
-    const matches = !deferredQuery || [book.title, book.originalTitle, book.author, book.description, ...book.tags].join(' ').toLocaleLowerCase().includes(deferredQuery);
-    return matches && (category === '全部' || book.category === category) && (!isRecent || progress[book.id]) && (!isCompleted || book.completed);
-  }).sort((a, b) => {
-    if (isRecent) return (progress[b.id]?.visitedAt || 0) - (progress[a.id]?.visitedAt || 0);
-    if (sort === 'language' && languageRank(a.language) !== languageRank(b.language)) return languageRank(a.language) - languageRank(b.language);
-    if (sort === 'title') return a.title.localeCompare(b.title, 'zh-CN');
-    if (sort === 'added') return (Date.parse(b.addedAt) || 0) - (Date.parse(a.addedAt) || 0);
-    return (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0);
-  }), [catalog.books, deferredQuery, category, isRecent, isCompleted, progress, sort]);
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const filtered = catalog.books;
+  const pageCount = catalog.pageCount || 1;
   const currentPage = Math.min(page, pageCount);
-  const visibleBooks = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const visibleBooks = catalog.books;
   useEffect(() => { setPage(1); }, [deferredQuery, category, route.page, sort]);
   function changePage(next) { setPage(next); search.current?.closest('.books-section')?.scrollIntoView({ block: 'start' }); }
   const changeSection = page => { navigate('/' + page); setCategory('全部'); setSidebarOpen(false); };
@@ -125,7 +113,7 @@ function App() {
       <div className="sidebar-label">我的藏书</div>
       <nav className="sidebar-nav">
         <button className={!isRecent && !isCompleted && !isTasks ? 'selected' : ''} onClick={() => changeSection('library')}><LibraryBig size={19}/>全部书籍<span>{loading ? '…' : catalog.stats.total}</span></button>
-        <button className={isRecent ? 'selected' : ''} onClick={() => changeSection('recent')}><Clock3 size={19}/>最近阅读<span>{catalog.books.filter(book => progress[book.id]).length}</span></button>
+        <button className={isRecent ? 'selected' : ''} onClick={() => changeSection('recent')}><Clock3 size={19}/>最近阅读<span>{recentIds.length}</span></button>
         <button className={isCompleted ? 'selected' : ''} onClick={() => changeSection('completed')}><BookMarked size={19}/>完结作品<span>{catalog.stats.completed}</span></button>
       </nav>
       <div className="sidebar-label category-label">任务管理</div>
@@ -143,7 +131,7 @@ function App() {
         <section className="library-summary" aria-label="书库统计"><div><span>收录作品</span><strong>{catalog.stats.total}<small>本</small></strong></div><div><span>完结作品</span><strong>{catalog.stats.completed}<small>本</small></strong></div><div><span>收录作者</span><strong>{catalog.stats.authors}<small>位</small></strong></div><div><span>本地存储</span><strong className="storage-number">{bytes(catalog.stats.bytes)}</strong></div><div className="summary-note"><span className="summary-icon"><BookOpen size={23} strokeWidth={1.4}/></span><p>每一本，<br/>都有一个值得留下的世界。</p></div></section>
         <div className="library-columns"><section className="books-section">
           <div className="books-tools"><label className="search-field"><Search size={18}/><input ref={search} placeholder="搜索书名、作者、简介或标签" aria-label="搜索书籍" value={query} onChange={event => setQuery(event.target.value)}/>{query ? <button onClick={() => setQuery('')} aria-label="清除搜索"><X size={15}/></button> : <kbd>/</kbd>}</label><label className="sort-field"><select value={sort} onChange={event => setSort(event.target.value)} aria-label="书籍排序"><option value="language">简体中文优先</option><option value="updated">最近更新</option><option value="added">最近入库</option><option value="title">书名顺序</option></select><ChevronDown size={15}/></label></div>
-          <div className="results-heading"><h2>{category === '全部' ? isRecent ? '阅读记录' : '全部作品' : category}<span>{catalog.partial ? catalog.stats.total : filtered.length}</span></h2><span>{loading ? '正在加载书库' : catalog.partial ? '已显示首批书籍，正在加载完整搜索索引…' : catalog.invalidEntries.length ? '有 ' + catalog.invalidEntries.length + ' 份资料待完善' : '索引已同步'}</span></div>
+          <div className="results-heading"><h2>{category === '全部' ? isRecent ? '阅读记录' : '全部作品' : category}<span>{catalog.total ?? filtered.length}</span></h2><span>{loading ? '正在加载书库' : catalog.invalidEntries.length ? '有 ' + catalog.invalidEntries.length + ' 份资料待完善' : '索引已同步'}</span></div>
           <nav className="category-filter" aria-label="文库分类">
             <button type="button" aria-pressed={category === '全部'} onClick={() => setCategory('全部')}>全部分类<span>{catalog.stats.total}</span></button>
             {categories.map(([item, count]) => <button type="button" key={item} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}<span>{count}</span></button>)}
@@ -156,7 +144,7 @@ function App() {
             <div className="book-facts"><span>{languageLabel(book.language)}</span><span>{words(book.wordCount)}</span><span>{book.chapterCount ? book.chapterCount + ' 章' : book.formats.join(' / ')}</span><span>{date(book.updatedAt)}</span></div>
             <div className="book-card-actions"><button className="button primary" onClick={() => readBook(book.id, progress[book.id]?.chapter || 0)}><BookOpen size={15}/>{progress[book.id] ? '继续阅读' : '开始阅读'}<ArrowRight size={15}/></button><button className="text-button" onClick={() => navigate('/book/' + encodeURIComponent(book.id))}>书籍详情</button></div></div>
           </article>)}</div> : <div className="empty-state"><BookOpen size={36} strokeWidth={1.3}/><h3>{query || category !== '全部' ? '暂时没有匹配的书籍' : isRecent ? '阅读记录从这里开始' : '这里，等待第一本故事'}</h3><p>{query ? '换个关键词试试，书名、作者和介绍都可以检索。' : isRecent ? '打开任意一本书，章节位置会自动保存在本机。' : '放入一份 JSON 和完整书稿，即可在这里阅读。'}</p><button className="button secondary" onClick={openImport}><Plus size={16}/>导入书籍</button></div>}
-          {filtered.length > pageSize && <nav className="book-pagination" aria-label="书籍分页"><span>共 {filtered.length.toLocaleString('zh-CN')} 本 · 每页 {pageSize} 本</span><div><button className="button secondary" disabled={currentPage === 1} onClick={() => changePage(currentPage - 1)}>上一页</button><span aria-live="polite">{currentPage} / {pageCount}</span><button className="button secondary" disabled={currentPage === pageCount} onClick={() => changePage(currentPage + 1)}>下一页</button></div></nav>}
+          {(catalog.total || 0) > pageSize && <nav className="book-pagination" aria-label="书籍分页"><span>共 {(catalog.total || 0).toLocaleString('zh-CN')} 本 · 每页 {pageSize} 本</span><div><button className="button secondary" disabled={currentPage === 1} onClick={() => changePage(currentPage - 1)}>上一页</button><span aria-live="polite">{currentPage} / {pageCount}</span><button className="button secondary" disabled={currentPage === pageCount} onClick={() => changePage(currentPage + 1)}>下一页</button></div></nav>}
           {catalog.invalidEntries.length > 0 && <details className="invalid-list"><summary>查看待完善的书籍文件（{catalog.invalidEntries.length}）</summary>{catalog.invalidEntries.map(item => <p key={item.file}><strong>{item.file}</strong>{item.message}</p>)}</details>}
         </section><aside className="library-rail"><div className="rail-note"><span className="rail-icon"><FolderOpen size={23} strokeWidth={1.4}/></span><h3>放入文件，即刻入库</h3><p>一本书，一份 JSON，一份完整正文。页面会自动发现新加入的故事。</p><div className="folder-example"><span><FolderOpen size={15}/>library / my-book</span><span><FileJson size={15}/>book.json <small>书籍资料</small></span><span><BookOpen size={15}/>content.txt <small>完整正文</small></span></div><button className="button secondary" onClick={openImport}>查看导入方式<ArrowRight size={15}/></button></div><div className="rail-location"><span className="muted-label">书库所在位置</span><code>{catalog.libraryPath || 'library/'}</code><button onClick={copyPath}><Copy size={14}/>复制路径</button></div><div className="rail-sync"><span className="sync-mark"><Check size={13}/></span><span>每 5 秒自动发现新书<br/><small>无需重新构建或重启服务</small></span></div></aside></div>
         <footer className="page-footer"><span>文库档案</span><p>以文件为书架，以阅读为归处。</p><span>{catalog.scannedAt ? '最近扫描 ' + new Date(catalog.scannedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '正在扫描'}</span></footer>

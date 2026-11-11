@@ -76,5 +76,16 @@ test('library preview provides a first page while the full catalog continues loa
   assert.equal(preview.books[0].id, 'book-29');
   assert.equal(preview.stats.total, 30);
   assert.equal(preview.partial, true);
-  assert.equal((await fetch('http://127.0.0.1:' + server.address().port + '/api/library')).status, 200);
+  const origin = 'http://127.0.0.1:' + server.address().port;
+  const secondPageResponse = await fetch(origin + '/api/library?page=2&pageSize=10');
+  const secondPage = await secondPageResponse.json();
+  assert.equal(secondPage.books.length, 10);
+  assert.equal(secondPage.pageCount, 3);
+  assert.equal(secondPage.total, 30);
+  assert.equal(secondPage.categories.find(([name]) => name === '未分类')[1], 30);
+  const search = await (await fetch(origin + '/api/library?q=' + encodeURIComponent('书籍 2') + '&category=' + encodeURIComponent('未分类'))).json();
+  assert.equal(search.total, 11);
+  assert.ok(search.books.every(book => book.title.includes('书籍 2')));
+  const completed = await (await fetch(origin + '/api/library?completed=1')).json();
+  assert.equal(completed.total, 0);
 });
