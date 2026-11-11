@@ -1,8 +1,8 @@
 # 公开部署与管理登录
 
-书库列表、资料、章节、封面、全文下载公开访问。扫描状态、启动、停止、书籍导入必须登录；仅需账号和密码，不需要邮箱、手机号、第三方登录或数据库。账号由服务器管理员创建，不开放访客注册。现有页面风格不变。
+书库列表、资料、章节、封面、全文下载公开访问。访客可通过 `#/register` 注册普通账号，表单仅有账号、密码和图片验证码；`#/login` 登录使用同样三个字段，不需要邮箱、手机号、第三方登录或数据库。扫描状态、启动、停止、书籍导入仅限管理员；注册用户无法取得管理权限。
 
-密码使用随机盐和 scrypt 保存，浏览器使用 HttpOnly、SameSite=Strict 会话 Cookie；HTTPS 配置下添加 Secure。会话有效期 12 小时，退出立即失效，服务重启后需要重新登录。连续登录失败会限速。公开模式未配置管理凭据时拒绝启动，不会退回无登录模式。
+密码使用随机盐和 scrypt 保存，注册用户写入管理凭据旁的私有 `users.json` 文件。浏览器使用 HttpOnly、SameSite=Strict 会话 Cookie；HTTPS 配置下添加 Secure。会话有效期 12 小时，退出立即失效，服务重启后需要重新登录。注册和每次登录均需五位图片验证码，五分钟有效、只能尝试一次、与当前浏览器绑定；点击图片可刷新。验证码在服务器核验，答案不随接口返回。不另设登录次数锁定或限流配置。公开模式未配置管理凭据时拒绝启动。
 
 ## 本地运行
 
@@ -98,10 +98,14 @@ systemctl --user restart wenku-archive
 | --- | --- | --- |
 | GET /api/library、/api/books/... | 可访问 | 可访问 |
 | GET /api/auth/session | 仅返回当前会话状态 | 仅返回当前会话状态 |
-| POST /api/auth/login | 账号密码登录 | 可重新登录 |
+| GET /api/auth/captcha?purpose=register 或 login | 获取图片验证码 | 获取图片验证码 |
+| POST /api/auth/register | 账号、密码、验证码注册普通用户 | 不改变管理员账号 |
+| POST /api/auth/login | 账号、密码、验证码登录 | 可重新登录 |
 | POST /api/auth/logout | 清除 Cookie | 撤销当前会话 |
 | GET /api/worker/status | 401 | 可访问 |
 | POST /api/worker/start、stop | 401 | 可操作 |
 | POST /api/publish | 401 | 可导入 |
 
 所有管理写入均验证 Origin 和自定义请求头，不接受任意命令或路径参数。管理 Cookie 不放入 localStorage，密码与来源站 Cookie 不打进前端包。
+
+已登录普通用户访问管理接口返回 403；未登录返回 401。注册请求中的 `role` 等额外字段不会授予管理权限。管理员仍由 `admin:create` 在服务器私下配置，代码中没有固定密码。

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes, scryptSync } from 'node:crypto';
 import { createAppServer } from '../server/app.mjs';
+import { createCaptchaService } from '../server/captcha.mjs';
 import { request } from 'node:http';
 
 function withHost(origin, path, headers, body) {
@@ -30,12 +31,23 @@ async function fixture(t, options = {}) {
   const salt = randomBytes(16).toString('hex');
   const adminAuthFile = join(root, 'admin.json');
   await writeFile(adminAuthFile, JSON.stringify({ version: 1, username: 'owner', salt, passwordHash: scryptSync('a-test-password-only', salt, 64).toString('hex') }));
-  const server = await createAppServer({ libraryRoot, webRoot, adminAuthFile, publicOrigin: 'http://archive.example', ...options });
+  const server = await createAppServer({ libraryRoot, webRoot, adminAuthFile, publicOrigin: 'http://archive.example', captchaService: createCaptchaService({ makeAnswer: () => '12345' }), ...options });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }); });
   const origin = 'http://127.0.0.1:' + server.address().port;
   const post = (path, body = {}, extra = {}) => fetch(origin + path, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', 'X-Archive-Client': 'local-web', ...extra }, body: JSON.stringify(body) });
-  return { root, origin, post };
+  async function login(username, password, { host = null, purpose = 'login', path = '/api/auth/login' } = {}) {
+    if (host) {
+      const issued = await withHost(origin, '/api/auth/captcha?purpose=' + purpose, { Host: host, Origin: 'https://' + host });
+      const challenge = JSON.parse(issued.body), cookie = issued.headers['set-cookie'][0].split(';')[0];
+      const result = await withHost(origin, path, { Host: host, Origin: 'https://' + host, Cookie: cookie, 'Content-Type': 'application/json', 'X-Archive-Client': 'local-web' }, JSON.stringify({ username, password, captchaId: challenge.id, captcha: '12345' }));
+      return { status: result.status, headers: new Headers(result.headers), text: async () => result.body };
+    }
+    const issued = await fetch(origin + '/api/auth/captcha?purpose=' + purpose);
+    const challenge = await issued.json(), cookie = issued.headers.get('set-cookie')?.split(';')[0];
+    return post(path, { username, password, captchaId: challenge.id, captcha: '12345' }, { Cookie: cookie });
+  }
+  return { root, origin, post, login };
 }
 
 test('public books remain readable while every administration API requires a session', async t => {
@@ -50,14 +62,14 @@ test('public books remain readable while every administration API requires a ses
     assert.equal(response.status, 401, path);
   }
   const session = await (await fetch(f.origin + '/api/auth/session')).json();
-  assert.deepEqual(session, { enabled: true, authenticated: false, username: null, public: true });
+  assert.deepEqual(session, { enabled: true, registrationEnabled: true, authenticated: false, username: null, role: null, canManage: false, public: true });
 });
 
 test('username and password create a protected session that logout revokes', async t => {
   const f = await fixture(t);
-  const wrong = await f.post('/api/auth/login', { username: 'owner', password: 'wrong-password' });
+  const wrong = await f.login('owner', 'wrong-password');
   assert.equal(wrong.status, 401);
-  const response = await f.post('/api/auth/login', { username: 'owner', password: 'a-test-password-only' });
+  const response = await f.login('owner', 'a-test-password-only');
   assert.equal(response.status, 200);
   const cookie = response.headers.get('set-cookie');
   assert.match(cookie, /HttpOnly/i);
@@ -67,6 +79,7 @@ test('username and password create a protected session that logout revokes', asy
   const session = await (await fetch(f.origin + '/api/auth/session', { headers })).json();
   assert.equal(session.authenticated, true);
   assert.equal(session.username, 'owner');
+  assert.equal(session.canManage, true);
   assert.equal((await fetch(f.origin + '/api/worker/status', { headers })).status, 200);
   assert.equal((await f.post('/api/auth/logout', {}, headers)).status, 200);
   assert.equal((await fetch(f.origin + '/api/worker/status', { headers })).status, 401);
@@ -75,7 +88,10 @@ test('username and password create a protected session that logout revokes', asy
 
 test('login rejects cross-origin and oversized input; unconfigured public access fails closed', async t => {
   const f = await fixture(t);
-  assert.equal((await f.post('/api/auth/login', { username: 'owner', password: 'a-test-password-only' }, { Origin: 'http://unrelated.example' })).status, 403);
+  const issued = await fetch(f.origin + '/api/auth/captcha?purpose=login');
+  const challenge = await issued.json();
+  const cookie = issued.headers.get('set-cookie')?.split(';')[0];
+  assert.equal((await f.post('/api/auth/login', { username: 'owner', password: 'a-test-password-only', captchaId: challenge.id, captcha: '12345' }, { Cookie: cookie, Origin: 'http://unrelated.example' })).status, 403);
   assert.equal((await f.post('/api/auth/login', { username: 'owner', password: 'x'.repeat(9000) })).status, 413);
   const forged = await fetch(f.origin + '/api/worker/status', { headers: { Cookie: 'archive_admin=forged', Authorization: 'Basic anything' } });
   assert.equal(forged.status, 401);
@@ -86,22 +102,16 @@ test('public host is explicitly allowlisted and HTTPS sessions carry Secure cook
   const f = await fixture(t, { publicOrigin: 'https://archive.example' });
   assert.equal((await withHost(f.origin, '/api/health', { Host: 'archive.example' })).status, 200);
   assert.equal((await withHost(f.origin, '/api/health', { Host: 'unrelated.example' })).status, 403);
-  const response = await withHost(f.origin, '/api/auth/login', { Host: 'archive.example', Origin: 'https://archive.example', 'Content-Type': 'application/json', 'X-Archive-Client': 'local-web' }, JSON.stringify({ username: 'owner', password: 'a-test-password-only' }));
+  const response = await f.login('owner', 'a-test-password-only', { host: 'archive.example' });
   assert.equal(response.status, 200);
-  assert.match(response.headers['set-cookie'][0], /; Secure/i);
+  assert.match(response.headers.get('set-cookie'), /; Secure/i);
 });
 
-test('repeated failed logins are throttled without leaking credentials', async t => {
+test('image captcha is required for every login instead of a separate attempt limiter', async t => {
   const f = await fixture(t);
   let response;
-  for (let i = 0; i < 10; i++) response = await f.post('/api/auth/login', { username: 'nonexistent', password: 'bad' });
-  assert.equal(response.status, 429);
-  assert.ok(Number(response.headers.get('retry-after')) > 0);
+  for (let i = 0; i < 10; i++) response = await f.login('nonexistent', 'bad');
+  assert.equal(response.status, 401);
   assert.doesNotMatch(await response.text(), /passwordHash|a-test-password-only|salt/);
-});
-
-test('parallel login attempts cannot bypass the login attempt limit', async t => {
-  const f = await fixture(t);
-  const attempts = await Promise.all(Array.from({ length: 12 }, () => f.post('/api/auth/login', { username: 'owner', password: 'wrong-password' })));
-  assert.ok(attempts.filter(response => response.status === 429).length >= 4);
+  assert.equal((await f.post('/api/auth/login', { username: 'owner', password: 'a-test-password-only' })).status, 400);
 });

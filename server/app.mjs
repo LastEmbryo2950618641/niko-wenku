@@ -6,6 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import { createLibrary, publishBundle, ArchiveError } from './library.mjs';
 import { createWorkerController } from './worker-control.mjs';
 import { createAdminAuth } from './admin-auth.mjs';
+import { createCaptchaService } from './captcha.mjs';
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.avif': 'image/avif', '.gif': 'image/gif', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 function json(res, status, value) {
@@ -24,7 +25,7 @@ async function readJson(req, maxBytes = 180 * 1024 * 1024) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { throw new ArchiveError('JSON 格式不正确'); }
 }
-export async function createAppServer({ libraryRoot, webRoot, dev = false, worker, adminAuthFile, publicOrigin }) {
+export async function createAppServer({ libraryRoot, webRoot, dev = false, worker, adminAuthFile, publicOrigin, captchaService = createCaptchaService() }) {
   let publicUrl;
   if (publicOrigin) {
     publicUrl = new URL(publicOrigin);
@@ -32,7 +33,7 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
     if (!adminAuthFile) throw new Error('公开部署必须配置管理登录（ARCHIVE_AUTH_FILE）');
     if (dev) throw new Error('公开部署请先构建前端，不使用开发服务器');
   }
-  const adminAuth = await createAdminAuth(adminAuthFile);
+  const adminAuth = await createAdminAuth(adminAuthFile, captchaService);
   const library = createLibrary(libraryRoot);
   const workerControl = worker ? createWorkerController({ ...worker, libraryRoot }) : null;
   const publicRoot = resolve(webRoot);
@@ -52,23 +53,37 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
       if (url.origin !== origin || (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && (!publicUrl || url.host !== publicUrl.host))) throw new ArchiveError('不允许访问此主机地址', 403);
       if (!['GET', 'HEAD', 'POST'].includes(req.method)) throw new ArchiveError('不支持的方法', 405);
       const currentSession = adminAuth?.session(req);
-      const authState = () => ({ enabled: !!adminAuth, authenticated: !adminAuth || !!adminAuth.session(req), username: adminAuth?.session(req)?.username || null, public: !!publicUrl });
+      const authState = (session = currentSession) => ({ enabled: !!adminAuth, registrationEnabled: !!adminAuth, authenticated: !adminAuth || !!session, username: session?.username || null, role: session?.role || null, canManage: !adminAuth || session?.role === 'admin', public: !!publicUrl });
       function requireSameOrigin() {
         if (req.headers.origin !== origin || req.headers['x-archive-client'] !== 'local-web') throw new ArchiveError('仅允许本站页面提交管理请求', 403);
       }
       if (url.pathname === '/api/auth/session' && req.method === 'GET') return json(res, 200, authState());
-      if (url.pathname === '/api/auth/login' && req.method === 'POST') {
+      if (url.pathname === '/api/auth/captcha' && req.method === 'GET') {
+        if (!adminAuth) throw new ArchiveError('此实例未启用账号登录', 409);
+        return json(res, 200, captchaService.issue(req, res, url.searchParams.get('purpose'), origin.startsWith('https:')));
+      }
+      const captchaMatch = /^\/api\/auth\/captcha\/([a-f0-9]{48})\.png$/.exec(url.pathname);
+      if (captchaMatch && req.method === 'GET') {
+        const image = captchaService.image(req, captchaMatch[1]);
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store', 'Content-Length': image.length });
+        return res.end(image);
+      }
+      if (['/api/auth/login', '/api/auth/register'].includes(url.pathname) && req.method === 'POST') {
         requireSameOrigin();
         if (!adminAuth) throw new ArchiveError('本地实例尚未启用管理登录', 409);
-        const session = await adminAuth.login(req, res, await readJson(req, 8192), origin.startsWith('https:'));
-        return json(res, 200, { enabled: true, authenticated: true, username: session.username, public: !!publicUrl });
+        const register = url.pathname.endsWith('/register');
+        const session = await adminAuth[register ? 'register' : 'login'](req, res, await readJson(req, 8192), origin.startsWith('https:'));
+        return json(res, register ? 201 : 200, authState(session));
       }
       if (url.pathname === '/api/auth/logout' && req.method === 'POST') {
         requireSameOrigin();
         adminAuth?.logout(req, res, origin.startsWith('https:'));
-        return json(res, 200, { enabled: !!adminAuth, authenticated: !adminAuth, username: null, public: !!publicUrl });
+        return json(res, 200, authState(null));
       }
-      if (adminAuth && (url.pathname.startsWith('/api/worker/') || url.pathname === '/api/publish') && !currentSession) throw new ArchiveError('请先登录管理账号', 401);
+      if (adminAuth && (url.pathname.startsWith('/api/worker/') || url.pathname === '/api/publish')) {
+        if (!currentSession) throw new ArchiveError('请先登录管理账号', 401);
+        if (currentSession.role !== 'admin') throw new ArchiveError('此功能仅限管理员使用', 403);
+      }
       if (url.pathname === '/api/health') return json(res, 200, { ok: true, name: '文库档案' });
       if (url.pathname === '/api/library' && req.method === 'GET') {
         const catalog = await library.scan({ maxAgeMs: url.searchParams.get('refresh') === '1' ? 0 : 4000 });

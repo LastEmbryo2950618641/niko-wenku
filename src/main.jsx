@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { ArrowRight, BookMarked, BookOpen, Check, ChevronDown, Clock3, Copy, Download, FileJson, FolderOpen, HardDrive, LibraryBig, Menu, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { BookDetails, Cover, ImportDialog } from './components';
 import { appUrl, bytes, date, navigate, readBook, useProgress, useRoute, words } from './lib';
-import { AdminAccess, useAdminSession } from './admin';
+import { AdminAccess, AuthPage, useAdminSession } from './admin';
 import './style.css';
 import './pagination.css';
 import { languageLabel, languageRank } from '../shared/language.mjs';
@@ -74,13 +74,13 @@ function App() {
   }, [route.page]);
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(''), 4000); return () => clearTimeout(timeout); }, [toast]);
   useEffect(() => {
-    if (route.page !== 'read') document.title = route.page === 'tasks' ? '扫描与下载 · 文库档案' : admin.public ? '文库档案 · 共享书库' : '文库档案 · 本地书库';
+    if (route.page !== 'read') document.title = route.page === 'tasks' ? '扫描与下载 · 文库档案' : route.page === 'register' ? '注册账号 · 文库档案' : route.page === 'login' ? '登录 · 文库档案' : admin.public ? '文库档案 · 共享书库' : '文库档案 · 本地书库';
   }, [route.page, admin.public]);
   const categories = [...new Set(catalog.books.map(book => book.category))];
   const isRecent = route.page === 'recent';
   const isCompleted = route.page === 'completed';
   const isTasks = route.page === 'tasks';
-  const canManage = admin.ready && admin.authenticated;
+  const canManage = admin.ready && admin.canManage;
   const isPublic = admin.public === true;
   function openImport() { if (canManage) setImportOpen(true); else { navigate('/tasks'); setSidebarOpen(false); } }
   async function logout() { try { await admin.logout(); setImportOpen(false); } catch (reason) { setToast(reason.message); } }
@@ -123,12 +123,12 @@ function App() {
       <div className="sidebar-bottom"><div className="local-badge"><HardDrive size={16}/><strong>{isPublic ? '共享书库' : '本地书库'}</strong><span>运行中</span></div><p>{isPublic ? '打开书库，故事随时可读。' : '文件留在本机，故事随时可读。'}</p><button onClick={openImport}><FolderOpen size={16}/>{canManage ? '管理书籍文件' : '管理登录'}<ArrowRight size={15}/></button></div>
     </aside>
     <div className="workspace">
-      <header className="topbar"><button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="打开导航"><Menu size={21}/></button><span className="breadcrumb">{isTasks ? '任务管理' : '我的藏书'} <span>/</span> {isTasks ? '扫描与下载' : isRecent ? '最近阅读' : isCompleted ? '完结作品' : '全部书籍'}</span><div className="topbar-right"><span className="local-indicator"><i/>{isPublic ? '公开书库' : '本地模式'}</span>{admin.enabled && (admin.authenticated ? <div className="admin-account"><span>{admin.username}</span><button className="text-button" onClick={logout}>退出登录</button></div> : <button className="button secondary" onClick={() => changeSection('tasks')}>管理登录</button>)}{canManage && <button className="button primary" onClick={openImport}><Plus size={17}/>导入书籍</button>}</div></header>
+      <header className="topbar"><button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="打开导航"><Menu size={21}/></button><span className="breadcrumb">{isTasks ? '任务管理' : '我的藏书'} <span>/</span> {isTasks ? '扫描与下载' : isRecent ? '最近阅读' : isCompleted ? '完结作品' : '全部书籍'}</span><div className="topbar-right"><span className="local-indicator"><i/>{isPublic ? '公开书库' : '本地模式'}</span>{admin.enabled && (admin.authenticated ? <div className="admin-account"><span>{admin.username}</span><button className="text-button" onClick={logout}>退出登录</button></div> : <><button className="button secondary" onClick={() => navigate('/login')}>登录</button><button className="button secondary" onClick={() => navigate('/register')}>注册</button></>)}{canManage && <button className="button primary" onClick={openImport}><Plus size={17}/>导入书籍</button>}</div></header>
       <main className={'library-main' + (isTasks ? ' worker-main' : '')}>
         {isTasks ? <>
           <section className="page-heading"><div><h1>任务管理<span className="heading-period">.</span></h1><p>查看扫描与下载进度，管理后台任务。</p></div><button className="button secondary" onClick={() => changeSection('library')}><LibraryBig size={16}/>返回书库</button></section>
           <AdminAccess admin={admin}><WorkerPanel onUnauthorized={admin.refresh}/></AdminAccess>
-        </> : <>
+        </> : route.page === 'login' || route.page === 'register' ? <><section className="page-heading"><div><h1>{route.page === 'register' ? '注册账号' : '登录'}<span className="heading-period">.</span></h1><p>账号和密码即可使用。</p></div><button className="button secondary" onClick={() => changeSection('library')}><LibraryBig size={16}/>返回书库</button></section><AuthPage admin={admin} mode={route.page}/></> : <>
         <section className="page-heading"><div><h1>{isRecent ? '继续你的故事' : isCompleted ? '完结书库' : '我的书库'}<span className="heading-period">.</span></h1><p>{isRecent ? '从上次停下的地方，重新走进故事。' : '收好每一页，留住每一个世界。'}</p></div><button className="button secondary scan-button" onClick={() => reload(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing ? 'spin' : ''}/>{refreshing ? '正在扫描' : '重新扫描'}</button></section>
         <section className="library-summary" aria-label="书库统计"><div><span>收录作品</span><strong>{catalog.stats.total}<small>本</small></strong></div><div><span>完结作品</span><strong>{catalog.stats.completed}<small>本</small></strong></div><div><span>收录作者</span><strong>{catalog.stats.authors}<small>位</small></strong></div><div><span>本地存储</span><strong className="storage-number">{bytes(catalog.stats.bytes)}</strong></div><div className="summary-note"><span className="summary-icon"><BookOpen size={23} strokeWidth={1.4}/></span><p>每一本，<br/>都有一个值得留下的世界。</p></div></section>
         <div className="library-columns"><section className="books-section">
