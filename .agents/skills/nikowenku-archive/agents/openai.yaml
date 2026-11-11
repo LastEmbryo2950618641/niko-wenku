@@ -1,0 +1,4 @@
+interface:
+  display_name: "Niko Wenku Archive"
+  short_description: "Search and download books in the archive from Codex or the CLI."
+  default_prompt: "Use $nikowenku-archive to search the archive, inspect a book, or download its text."

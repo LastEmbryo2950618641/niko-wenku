@@ -13,33 +13,40 @@ const rootManifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8
 
 try {
   await mkdir(packageDir, { recursive: true });
-  for (const directory of ['scripts', 'server', 'shared']) await mkdir(join(packageDir, directory));
+  for (const directory of ['scripts', 'server', 'shared', 'skill']) await mkdir(join(packageDir, directory));
   for (const [source, destination] of [
     ['scripts/cli.mjs', 'scripts/cli.mjs'],
     ['server/library.mjs', 'server/library.mjs'],
     ['server/text.mjs', 'server/text.mjs'],
     ['shared/language.mjs', 'shared/language.mjs'],
+    ['.agents/skills/nikowenku-archive/SKILL.md', 'skill/SKILL.md'],
     ['LICENSE', 'LICENSE']
   ]) await copyFile(join(root, source), join(packageDir, destination));
 
   const manifest = {
     name: 'nikowenku-archive',
     version: rootManifest.version,
-    description: 'Search, inspect, and download books from Wenku Archive',
+    description: 'Search, inspect, and download light novels from Wenku Archive',
     type: 'module',
     bin: { 'nikowenku-archive': './scripts/cli.mjs' },
     engines: { node: '>=22' },
-    files: ['scripts/cli.mjs', 'server/library.mjs', 'server/text.mjs', 'shared/language.mjs', 'LICENSE', 'README.md']
+    files: ['scripts/cli.mjs', 'server/library.mjs', 'server/text.mjs', 'shared/language.mjs', 'skill/SKILL.md', 'LICENSE', 'README.md']
   };
   await writeFile(join(packageDir, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
   const readme = [
     '# nikowenku-archive',
     '',
-    'Requires Node.js 22 or newer. Install offline with `npm install -g --offline ./nikowenku-archive-' + rootManifest.version + '.tgz`.',
+    'A cross-platform CLI for the Wenku Archive, whose collection focuses mainly on light novels and may include other works.',
+    '',
+    'Requires Node.js 22 or newer. Install from npm with `npm install -g nikowenku-archive`, or install offline from `npm install -g --offline ./nikowenku-archive-' + rootManifest.version + '.tgz`.',
     '',
     'The CLI connects to the public Wenku Archive site by default. Set `ARCHIVE_SITE_URL` or pass `--site <url>` to use another server.',
     '',
     'For a local library, pass `--local` or `--library <path>`. Without a path it uses `./library` relative to the current working directory.',
+    '',
+    'The Codex Skill command manual is included at `skill/SKILL.md`. Copy it to `.agents/skills/nikowenku-archive/SKILL.md` in a project to enable the Skill there.',
+    '',
+    "On Windows PowerShell, use `Copy-Item (Join-Path (npm root -g) 'nikowenku-archive\\skill\\SKILL.md') .agents\\skills\\nikowenku-archive\\SKILL.md` after creating the destination directory. On Linux or macOS, use `cp \"$(npm root -g)/nikowenku-archive/skill/SKILL.md\" .agents/skills/nikowenku-archive/SKILL.md` after `mkdir -p .agents/skills/nikowenku-archive`.",
     '',
     'Run `nikowenku-archive --help` to see all commands.',
     ''
@@ -52,7 +59,9 @@ try {
     : spawnSync('npm', npmArgs, { cwd: root, encoding: 'utf8', stdio: 'inherit', shell: process.platform === 'win32' });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`npm pack exited with ${result.status}`);
+  await copyFile(join(root, '.agents', 'skills', 'nikowenku-archive', 'SKILL.md'), join(output, 'nikowenku-archive-skill.md'));
   console.log(`Created ${join(output, `nikowenku-archive-${rootManifest.version}.tgz`)}`);
+  console.log(`Created ${join(output, 'nikowenku-archive-skill.md')}`);
 } finally {
   await rm(scratch, { recursive: true, force: true });
 }

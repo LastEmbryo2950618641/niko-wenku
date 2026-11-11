@@ -25,7 +25,7 @@ setup 只补齐缺失目录、默认队列和原创示例，保留已有书库�
 
 ## 命令行工具 nikowenku-archive
 
-提供三个核心命令：`search` 搜索本站公开书库，`info` 查看书籍详情，`download` 将正文保存到指定文件。安装后默认连接公开书库，不需要启动本地 Web 服务：
+CLI 面向以轻小说为主、也可收录其他作品的本站书库，提供三个核心命令：`search` 搜索书库，`info` 查看作品详情，`download` 将正文保存到指定文件。安装后默认连接公开书库，不需要启动本地 Web 服务：
 
 ```sh
 node scripts/cli.mjs search "星" --site http://111.229.32.85
@@ -36,7 +36,13 @@ node scripts/cli.mjs download wenku8-934 --site http://111.229.32.85 --output ".
 可从书库首页下载独立 CLI 安装包，或在源码项目目录执行 `npm link`。安装包包含 `nikowenku-archive` 命令：
 
 ```sh
-npm install -g --offline ./nikowenku-archive-0.1.0.tgz
+npm install -g nikowenku-archive
+```
+
+也可从首页下载离线包安装：
+
+```sh
+npm install -g --offline ./nikowenku-archive-0.1.1.tgz
 nikowenku-archive search "星" --limit 10
 nikowenku-archive info wenku8-934 --json
 nikowenku-archive download wenku8-934 --output "./雾岛来信.txt"
@@ -46,6 +52,22 @@ nikowenku-archive --help
 默认连接公开书库 `http://111.229.32.85`，也可设置 `ARCHIVE_SITE_URL` 或传入 `--site <网址>`。用 `--local` 或 `--library <目录>` 切换到本地书库；本地模式默认使用当前目录下的 `library/`，索引目录为 `.state/`。源码项目内的本地模式可使用 `npm run archive -- search "星" --local`。
 
 安装包没有第三方运行依赖；已装好 Node.js 22+ 和 npm 的电脑可直接从本地 `.tgz` 离线安装，无需预先缓存 npm 包。查询网站书库和下载远端正文需要联网；本地模式可离线使用。
+
+同时提供 Codex Skill 命令手册，说明书以轻小说书库为主要使用场景；首页可单独下载，也包含在 npm 包的 `skill/SKILL.md`。Windows PowerShell 可将下载文件放到项目 Skill 目录：
+
+```powershell
+New-Item -ItemType Directory -Force .agents\skills\nikowenku-archive | Out-Null
+Copy-Item .\nikowenku-archive-skill.md .agents\skills\nikowenku-archive\SKILL.md
+```
+
+Linux/macOS：
+
+```sh
+mkdir -p .agents/skills/nikowenku-archive
+cp ./nikowenku-archive-skill.md .agents/skills/nikowenku-archive/SKILL.md
+```
+
+命令和 Skill 都面向 Windows、Linux、macOS；CI 在三个系统上运行完整测试和生产构建。
 
 搜索匹配书名、原名、作者、简介和标签，结果包含用于后续命令的书籍 ID；默认显示前 20 条，用 `--limit` 调整为 1–100 条。三个命令都支持 `--json`。`download` 保持正文原始字节和编码，默认保存到当前目录的 `<book-id>.<原扩展名>`，输出文件已存在时会报错；确认需要替换时加 `--force`。它只下载书库中已发布的正文，不会向来源站创建采集任务。
 
