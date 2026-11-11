@@ -45,12 +45,12 @@ ARCHIVE_AUTH_FILE=secrets/admin-auth.json npm start
 npm ci
 npm run setup -- --data-dir "$HOME/.local/share/wenku-archive"
 npm run admin:create -- --username owner --file "$HOME/.local/share/wenku-archive/secrets/admin-auth.json"
-ARCHIVE_BASE_PATH=/wenku/ npm run build
+npm run build
 mkdir -p "$HOME/.config/wenku-archive" "$HOME/.config/systemd/user"
 cp deploy/wenku-archive.service "$HOME/.config/systemd/user/"
 ```
 
-建立 `~/.config/wenku-archive/server.env`，将下面的目录替换为自己用户的绝对路径，公开 origin 替换为真实地址。origin 只填写协议和主机（可含端口），不要包含 `/wenku/` 路径。
+建立 `~/.config/wenku-archive/server.env`，将下面的目录替换为自己用户的绝对路径，公开 origin 替换为真实地址。origin 只填写协议和主机（可含端口），不包含路径。
 
 ```ini
 ARCHIVE_PORT=4178
@@ -68,7 +68,7 @@ systemctl --user enable --now wenku-archive
 sudo loginctl enable-linger "$(id -un)"
 ```
 
-将 `deploy/nginx-location.conf` 复制到 Nginx snippets 目录，并在原有站点的 `server {}` 中 include。检查 `sudo nginx -t` 通过后 reload。书库位于 `/wenku/#/library`，任务管理位于 `/wenku/#/tasks`。本模板保留原站点其余路径。首次上线后，登录任务页可查看状态并点击启动；停止任务不关闭网站。
+将 `deploy/nginx-location.conf` 复制到 Nginx snippets 目录，并在公开站点的 `server {}` 中 include。该配置将文库放在域名根路径 `/`，将旧 `/wenku/` 地址跳转到首页，并把原站点保留在 `/worldseed/`。确认同一个 `server {}` 中没有重复的 `location /`，运行 `sudo nginx -t` 通过后 reload。书库位于 `/#/library`，任务管理位于 `/#/tasks`。首次上线后，登录任务页可查看状态并点击启动；停止任务不关闭网站。
 
 如果使用独立域名和根路径，构建时省略 `ARCHIVE_BASE_PATH`，参考 `deploy/nginx-root.conf`。HTTPS 由现有反向代理终止，`ARCHIVE_PUBLIC_ORIGIN` 必须与浏览器的 origin 完全一致。Node 服务始终绑定 `127.0.0.1`；不要直接暴露无反代的内部端口。
 
@@ -80,7 +80,7 @@ sudo loginctl enable-linger "$(id -un)"
 git pull --ff-only
 npm ci
 npm test
-ARCHIVE_BASE_PATH=/wenku/ npm run build
+npm run build
 systemctl --user restart wenku-archive
 ```
 
