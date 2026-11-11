@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rename, stat, open, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, stat, link, rm } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -149,11 +149,12 @@ export async function acquireWorkerLock(stateDirectory, details) {
   await mkdir(stateDir, { recursive: true });
   const record = { token: randomUUID(), pid: process.pid, startedAt: new Date().toISOString(), ...details };
   for (let attempt = 0; attempt < 3; attempt++) {
-    let handle;
+    const readyPath = join(stateDir, '.worker-lock-' + randomUUID() + '.tmp');
     try {
-      handle = await open(path, 'wx', 0o600);
-      await handle.writeFile(JSON.stringify(record));
-      await handle.close();
+      // Publish a fully written file exclusively. Opening worker.lock with wx
+      // exposes an empty JSON file to status/start readers before writeFile.
+      await writeFile(readyPath, JSON.stringify(record), { flag: 'wx', mode: 0o600 });
+      await link(readyPath, path);
       return { ...record, async release() {
         let current;
         try { current = await readJsonFile(path); } catch { return; }
@@ -162,14 +163,13 @@ export async function acquireWorkerLock(stateDirectory, details) {
         try { const stop = await readJsonFile(join(stateDir, 'worker.stop')); if (stop.token === record.token) await rm(join(stateDir, 'worker.stop'), { force: true }); } catch {}
       } };
     } catch (error) {
-      await handle?.close().catch(() => {});
       if (error.code !== 'EEXIST') throw error;
       let previous;
       try { previous = await readJsonFile(path); } catch { throw new Error('运行锁不完整，请确认旧进程状态后处理'); }
       if (processExists(previous.pid)) throw new Error('下载脚本已在运行，不启动第二个实例');
       const current = await readJsonFile(path);
       if (current.token === previous.token) await rm(path, { force: true });
-    }
+    } finally { await rm(readyPath, { force: true }); }
   }
   throw new Error('无法取得下载脚本运行锁');
 }
