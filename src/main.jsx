@@ -74,8 +74,8 @@ function App() {
   }, [route.page]);
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(''), 4000); return () => clearTimeout(timeout); }, [toast]);
   useEffect(() => {
-    if (route.page !== 'read') document.title = route.page === 'tasks' ? '扫描与下载 · 文库档案' : '文库档案 · 本地书库';
-  }, [route.page]);
+    if (route.page !== 'read') document.title = route.page === 'tasks' ? '扫描与下载 · 文库档案' : admin.public ? '文库档案 · 共享书库' : '文库档案 · 本地书库';
+  }, [route.page, admin.public]);
   const categories = [...new Set(catalog.books.map(book => book.category))];
   const isRecent = route.page === 'recent';
   const isCompleted = route.page === 'completed';
