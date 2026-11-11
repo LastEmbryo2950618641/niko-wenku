@@ -1,0 +1,7 @@
+.category-filter{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px;padding:14px;background:var(--paper);border:1px solid var(--line);border-radius:7px}
+.category-filter button{display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:6px 11px;background:transparent;border:1px solid transparent;border-radius:5px;color:#68785d;font-size:12px;line-height:1.5}
+.category-filter button span{font-size:10px;font-variant-numeric:tabular-nums;color:#849476}
+.category-filter button:hover{background:#edf3e8}
+.category-filter button[aria-pressed=true]{background:#dfe8d8;border-color:#ccd9c3;color:#365d3e;font-weight:600}
+.category-filter button[aria-pressed=true] span{color:#52734e}
+@media(max-width:720px){.category-filter{gap:5px;padding:10px;margin-bottom:14px}.category-filter button{min-height:36px;padding:6px 9px;font-size:11px}.category-filter button span{font-size:10px}}

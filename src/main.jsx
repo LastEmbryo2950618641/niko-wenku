@@ -6,6 +6,7 @@ import { appUrl, bytes, date, navigate, readBook, useProgress, useRoute, words }
 import { AdminAccess, AuthPage, useAdminSession } from './admin';
 import './style.css';
 import './pagination.css';
+import './category-filter.css';
 import { languageLabel, languageRank } from '../shared/language.mjs';
 import WorkerPanel from './worker-panel';
 
@@ -84,7 +85,11 @@ function App() {
   useEffect(() => {
     if (route.page !== 'read') document.title = route.page === 'tasks' ? '扫描与下载 · 文库档案' : route.page === 'register' ? '注册账号 · 文库档案' : route.page === 'login' ? '登录 · 文库档案' : admin.public ? '文库档案 · 共享书库' : '文库档案 · 本地书库';
   }, [route.page, admin.public]);
-  const categories = [...new Set(catalog.books.map(book => book.category))];
+  const categories = useMemo(() => {
+    const counts = new Map();
+    for (const book of catalog.books) counts.set(book.category, (counts.get(book.category) || 0) + 1);
+    return [...counts];
+  }, [catalog.books]);
   const isRecent = route.page === 'recent';
   const isCompleted = route.page === 'completed';
   const isTasks = route.page === 'tasks';
@@ -125,9 +130,6 @@ function App() {
       </nav>
       <div className="sidebar-label category-label">任务管理</div>
       <nav className="sidebar-nav" aria-label="任务管理"><button className={isTasks ? 'selected' : ''} aria-current={isTasks ? 'page' : undefined} onClick={() => changeSection('tasks')}><Download size={19}/>扫描与下载</button></nav>
-      {!isTasks && <><div className="sidebar-label category-label">文库分类</div>
-      <nav className="category-nav"><button className={category === '全部' ? 'active-category' : ''} onClick={() => setCategory('全部')}><span className="category-dash"/>全部分类<span>{catalog.books.length}</span></button>{categories.map(item => <button key={item} className={category === item ? 'active-category' : ''} onClick={() => { setCategory(item); setSidebarOpen(false); }}><span className="category-dash"/>{item}<span>{catalog.books.filter(book => book.category === item).length}</span></button>)}</nav>
-      </>}
       <div className="sidebar-bottom"><div className="local-badge"><HardDrive size={16}/><strong>{isPublic ? '共享书库' : '本地书库'}</strong><span>运行中</span></div><p>{isPublic ? '打开书库，故事随时可读。' : '文件留在本机，故事随时可读。'}</p><button onClick={openImport}><FolderOpen size={16}/>{canManage ? '管理书籍文件' : '管理登录'}<ArrowRight size={15}/></button></div>
     </aside>
     <div className="workspace">
@@ -142,6 +144,10 @@ function App() {
         <div className="library-columns"><section className="books-section">
           <div className="books-tools"><label className="search-field"><Search size={18}/><input ref={search} placeholder="搜索书名、作者、简介或标签" aria-label="搜索书籍" value={query} onChange={event => setQuery(event.target.value)}/>{query ? <button onClick={() => setQuery('')} aria-label="清除搜索"><X size={15}/></button> : <kbd>/</kbd>}</label><label className="sort-field"><select value={sort} onChange={event => setSort(event.target.value)} aria-label="书籍排序"><option value="language">简体中文优先</option><option value="updated">最近更新</option><option value="added">最近入库</option><option value="title">书名顺序</option></select><ChevronDown size={15}/></label></div>
           <div className="results-heading"><h2>{category === '全部' ? isRecent ? '阅读记录' : '全部作品' : category}<span>{catalog.partial ? catalog.stats.total : filtered.length}</span></h2><span>{loading ? '正在加载书库' : catalog.partial ? '已显示首批书籍，正在加载完整搜索索引…' : catalog.invalidEntries.length ? '有 ' + catalog.invalidEntries.length + ' 份资料待完善' : '索引已同步'}</span></div>
+          <nav className="category-filter" aria-label="文库分类">
+            <button type="button" aria-pressed={category === '全部'} onClick={() => setCategory('全部')}>全部分类<span>{catalog.stats.total}</span></button>
+            {categories.map(([item, count]) => <button type="button" key={item} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}<span>{count}</span></button>)}
+          </nav>
           {error && <div className="form-error" role="alert">{error}<button className="text-button" onClick={() => reload(true)}>重试</button></div>}
           {loading ? <div className="loading-state">正在加载本地书库…</div> : filtered.length ? <div className="book-grid">{visibleBooks.map(book => <article className="book-card" key={book.id}>
             <button className="book-cover-button" onClick={() => navigate('/book/' + encodeURIComponent(book.id))} aria-label={'查看《' + book.title + '》资料'}><Cover book={book}/></button>
