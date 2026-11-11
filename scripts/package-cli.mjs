@@ -35,7 +35,7 @@ try {
   const readme = [
     '# nikowenku-archive',
     '',
-    'Requires Node.js 22 or newer. Install with `npm install -g ./nikowenku-archive-' + rootManifest.version + '.tgz`.',
+    'Requires Node.js 22 or newer. Install offline with `npm install -g --offline ./nikowenku-archive-' + rootManifest.version + '.tgz`.',
     '',
     'The CLI connects to the public Wenku Archive site by default. Set `ARCHIVE_SITE_URL` or pass `--site <url>` to use another server.',
     '',
