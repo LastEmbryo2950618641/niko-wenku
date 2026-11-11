@@ -8,4 +8,6 @@
 .cli-download>small{font-size:10px;color:#71806b}
 .cli-inline-link{display:inline-flex;align-items:center;gap:6px;margin-top:11px;color:#466d50;font-size:11px}
 .cli-inline-link:hover{text-decoration:underline}
+.topbar-cli-download{border-color:#dce3db;color:#516252;background:#fff}
+.topbar-cli-download:hover{background:#f1f5ef;border-color:#c4d2c4;color:#365f4a}
 @media(max-width:720px){.cli-inline-link{margin-top:10px;font-size:10px}}
