@@ -50,3 +50,31 @@ test('HTTP publish -> catalog -> chapter -> full download works; cross-origin wr
   assert.equal(rejected.status, 403);
   assert.equal((await fetch(origin + '/secrets/cookies.json')).status, 404);
 });
+
+test('library preview provides a first page while the full catalog continues loading', async t => {
+  const base = await mkdtemp(join(tmpdir(), 'wenku-preview-'));
+  const libraryRoot = join(base, 'library'), webRoot = join(base, 'dist');
+  await mkdir(webRoot);
+  await mkdir(libraryRoot);
+  for (let index = 0; index < 30; index++) {
+    const folder = join(libraryRoot, 'book-' + String(index).padStart(2, '0'));
+    await mkdir(folder);
+    await writeFile(join(folder, 'book.json'), JSON.stringify({ id: 'book-' + String(index).padStart(2, '0'), title: '书籍 ' + index, language: index === 29 ? 'zh-Hans' : 'en', files: { text: 'content.txt' } }));
+    await writeFile(join(folder, 'content.txt'), '完整正文');
+  }
+  const server = await createAppServer({ libraryRoot, webRoot });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+    await rm(base, { recursive: true, force: true });
+  });
+  const response = await fetch('http://127.0.0.1:' + server.address().port + '/api/library?preview=1');
+  assert.equal(response.status, 200);
+  const preview = await response.json();
+  assert.equal(preview.books.length, 24);
+  assert.equal(preview.books[0].id, 'book-29');
+  assert.equal(preview.stats.total, 30);
+  assert.equal(preview.partial, true);
+  assert.equal((await fetch('http://127.0.0.1:' + server.address().port + '/api/library')).status, 200);
+});

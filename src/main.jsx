@@ -30,6 +30,7 @@ function App() {
   const search = useRef(null);
   const catalogRequest = useRef(null);
   const catalogEtag = useRef('');
+  const previewShown = useRef(false);
   const progress = useProgress();
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const reload = useCallback(async (manual = false) => {
@@ -42,16 +43,23 @@ function App() {
     catalogRequest.current = request;
     request.promise = (async () => {
     try {
-      const response = await fetch(appUrl('/api/library' + (manual ? '?refresh=1' : '')), { signal: request.controller.signal, headers: catalogEtag.current && !manual ? { 'If-None-Match': catalogEtag.current } : {} });
+      const signal = AbortSignal.any([request.controller.signal, AbortSignal.timeout(30000)]);
+      if (!previewShown.current && !catalogEtag.current) {
+        const previewResponse = await fetch(appUrl('/api/library?preview=1'), { signal });
+        const preview = await previewResponse.json();
+        if (!previewResponse.ok) throw new Error(preview.error || '书库加载失败');
+        setCatalog(preview); setLoading(false); previewShown.current = true;
+      }
+      const response = await fetch(appUrl('/api/library' + (manual ? '?refresh=1' : '')), { signal, headers: catalogEtag.current && !manual ? { 'If-None-Match': catalogEtag.current } : {} });
       if (response.status !== 304) {
         const next = await response.json();
         if (!response.ok) throw new Error(next.error || '书库加载失败');
         catalogEtag.current = response.headers.get('ETag') || '';
-        setCatalog(previous => previous.revision && previous.revision === next.revision ? previous : next);
+        setCatalog(previous => !previous.partial && previous.revision && previous.revision === next.revision ? previous : next);
       }
       setError('');
     }
-    catch (reason) { if (reason.name !== 'AbortError') setError(reason.message); }
+    catch (reason) { if (reason.name !== 'AbortError') setError(reason.name === 'TimeoutError' ? '书目加载超时，请点击重试。已显示的书籍仍可阅读。' : reason.message); }
     finally { setLoading(false); if (manual) setRefreshing(false); }
     })();
     try { await request.promise; }
@@ -111,7 +119,7 @@ function App() {
       <a className="brand" href="#/library"><span className="brand-icon"><BookOpen size={23} strokeWidth={1.6}/></span><span>文库档案<small>{isPublic ? 'PUBLIC LIBRARY' : 'LOCAL LIBRARY'}</small></span></a>
       <div className="sidebar-label">我的藏书</div>
       <nav className="sidebar-nav">
-        <button className={!isRecent && !isCompleted && !isTasks ? 'selected' : ''} onClick={() => changeSection('library')}><LibraryBig size={19}/>全部书籍<span>{catalog.books.length}</span></button>
+        <button className={!isRecent && !isCompleted && !isTasks ? 'selected' : ''} onClick={() => changeSection('library')}><LibraryBig size={19}/>全部书籍<span>{loading ? '…' : catalog.stats.total}</span></button>
         <button className={isRecent ? 'selected' : ''} onClick={() => changeSection('recent')}><Clock3 size={19}/>最近阅读<span>{catalog.books.filter(book => progress[book.id]).length}</span></button>
         <button className={isCompleted ? 'selected' : ''} onClick={() => changeSection('completed')}><BookMarked size={19}/>完结作品<span>{catalog.stats.completed}</span></button>
       </nav>
@@ -133,7 +141,7 @@ function App() {
         <section className="library-summary" aria-label="书库统计"><div><span>收录作品</span><strong>{catalog.stats.total}<small>本</small></strong></div><div><span>完结作品</span><strong>{catalog.stats.completed}<small>本</small></strong></div><div><span>收录作者</span><strong>{catalog.stats.authors}<small>位</small></strong></div><div><span>本地存储</span><strong className="storage-number">{bytes(catalog.stats.bytes)}</strong></div><div className="summary-note"><span className="summary-icon"><BookOpen size={23} strokeWidth={1.4}/></span><p>每一本，<br/>都有一个值得留下的世界。</p></div></section>
         <div className="library-columns"><section className="books-section">
           <div className="books-tools"><label className="search-field"><Search size={18}/><input ref={search} placeholder="搜索书名、作者、简介或标签" aria-label="搜索书籍" value={query} onChange={event => setQuery(event.target.value)}/>{query ? <button onClick={() => setQuery('')} aria-label="清除搜索"><X size={15}/></button> : <kbd>/</kbd>}</label><label className="sort-field"><select value={sort} onChange={event => setSort(event.target.value)} aria-label="书籍排序"><option value="language">简体中文优先</option><option value="updated">最近更新</option><option value="added">最近入库</option><option value="title">书名顺序</option></select><ChevronDown size={15}/></label></div>
-          <div className="results-heading"><h2>{category === '全部' ? isRecent ? '阅读记录' : '全部作品' : category}<span>{filtered.length}</span></h2><span>{loading ? '正在加载书库' : catalog.invalidEntries.length ? '有 ' + catalog.invalidEntries.length + ' 份资料待完善' : '索引已同步'}</span></div>
+          <div className="results-heading"><h2>{category === '全部' ? isRecent ? '阅读记录' : '全部作品' : category}<span>{catalog.partial ? catalog.stats.total : filtered.length}</span></h2><span>{loading ? '正在加载书库' : catalog.partial ? '已显示首批书籍，正在加载完整搜索索引…' : catalog.invalidEntries.length ? '有 ' + catalog.invalidEntries.length + ' 份资料待完善' : '索引已同步'}</span></div>
           {error && <div className="form-error" role="alert">{error}<button className="text-button" onClick={() => reload(true)}>重试</button></div>}
           {loading ? <div className="loading-state">正在加载本地书库…</div> : filtered.length ? <div className="book-grid">{visibleBooks.map(book => <article className="book-card" key={book.id}>
             <button className="book-cover-button" onClick={() => navigate('/book/' + encodeURIComponent(book.id))} aria-label={'查看《' + book.title + '》资料'}><Cover book={book}/></button>

@@ -7,6 +7,7 @@ import { createLibrary, publishBundle, ArchiveError } from './library.mjs';
 import { createWorkerController } from './worker-control.mjs';
 import { createAdminAuth } from './admin-auth.mjs';
 import { createCaptchaService } from './captcha.mjs';
+import { languageRank } from '../shared/language.mjs';
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.avif': 'image/avif', '.gif': 'image/gif', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 function json(res, status, value) {
@@ -87,9 +88,13 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
       if (url.pathname === '/api/health') return json(res, 200, { ok: true, name: '文库档案' });
       if (url.pathname === '/api/library' && req.method === 'GET') {
         const catalog = await library.scan({ maxAgeMs: url.searchParams.get('refresh') === '1' ? 0 : 4000 });
+        if (url.searchParams.get('preview') === '1') {
+          const books = [...catalog.books].sort((a, b) => languageRank(a.language) - languageRank(b.language) || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0)).slice(0, 24);
+          return json(res, 200, { ...catalog, books, partial: books.length < catalog.books.length, libraryPath: publicUrl ? 'library/' : catalog.libraryPath });
+        }
         const etag = '"' + catalog.revision + '"';
         res.setHeader('ETag', etag);
-        if (req.headers['if-none-match'] === etag) { res.writeHead(304, { 'Cache-Control': 'no-cache' }); return res.end(); }
+        if (String(req.headers['if-none-match'] || '').split(',').some(value => value.trim().replace(/^W\//, '') === etag || value.trim() === '*')) { res.writeHead(304, { 'Cache-Control': 'no-cache' }); return res.end(); }
         return json(res, 200, publicUrl ? { ...catalog, libraryPath: 'library/' } : catalog);
       }
       if (url.pathname === '/api/worker/status' && req.method === 'GET') return json(res, 200, workerControl ? await workerControl.status() : { available: false, running: false, status: 'unavailable' });
