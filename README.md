@@ -23,6 +23,30 @@ setup 只补齐缺失目录、默认队列和原创示例，保留已有书库�
 
 生产模式必须运行 Node 服务；仅把 dist 放进静态托管服务，不能自动读取磁盘书库或接收新书。增加书籍不需要再次构建前端。
 
+## 命令行工具 nikowenku-archive
+
+提供三个核心命令：`search` 搜索本站公开书库，`info` 查看书籍详情，`download` 将正文保存到指定文件。安装后默认连接公开书库，不需要启动本地 Web 服务：
+
+```sh
+node scripts/cli.mjs search "星" --site http://111.229.32.85
+node scripts/cli.mjs info wenku8-934 --site http://111.229.32.85
+node scripts/cli.mjs download wenku8-934 --site http://111.229.32.85 --output "./雾岛来信.txt"
+```
+
+可从书库首页下载独立 CLI 安装包，或在源码项目目录执行 `npm link`。安装包包含 `nikowenku-archive` 命令：
+
+```sh
+npm install -g ./nikowenku-archive-0.1.0.tgz
+nikowenku-archive search "星" --limit 10
+nikowenku-archive info wenku8-934 --json
+nikowenku-archive download wenku8-934 --output "./雾岛来信.txt"
+nikowenku-archive --help
+```
+
+默认连接公开书库 `http://111.229.32.85`，也可设置 `ARCHIVE_SITE_URL` 或传入 `--site <网址>`。用 `--local` 或 `--library <目录>` 切换到本地书库；本地模式默认使用当前目录下的 `library/`，索引目录为 `.state/`。源码项目内的本地模式可使用 `npm run archive -- search "星" --local`。
+
+搜索匹配书名、原名、作者、简介和标签，结果包含用于后续命令的书籍 ID；默认显示前 20 条，用 `--limit` 调整为 1–100 条。三个命令都支持 `--json`。`download` 保持正文原始字节和编码，默认保存到当前目录的 `<book-id>.<原扩展名>`，输出文件已存在时会报错；确认需要替换时加 `--force`。它只下载书库中已发布的正文，不会向来源站创建采集任务。
+
 ## 放入一本书，直接上架
 
     library/

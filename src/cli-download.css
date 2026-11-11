@@ -1,0 +1,11 @@
+.cli-download{border-top:1px solid #e3e8df;border-bottom:1px solid #e3e8df;padding:16px 0;display:grid;gap:9px;color:#596d55}
+.cli-download>div{display:flex;align-items:center;gap:8px;color:#49644e}
+.cli-download h3{margin:0;font-size:12px;font-weight:600}
+.cli-download p{margin:0;font-size:11px;line-height:1.8;color:#65765f}
+.cli-download .button{justify-self:start;height:34px;font-size:11px;padding:0 11px}
+.cli-download .button span{font-size:10px;color:#71816a}
+.cli-download>code{font:10px/1.7 Consolas,monospace;overflow-wrap:anywhere;color:#52694c;background:#f0f4ed;padding:8px}
+.cli-download>small{font-size:10px;color:#71806b}
+.cli-inline-link{display:inline-flex;align-items:center;gap:6px;margin-top:11px;color:#466d50;font-size:11px}
+.cli-inline-link:hover{text-decoration:underline}
+@media(max-width:720px){.cli-inline-link{margin-top:10px;font-size:10px}}

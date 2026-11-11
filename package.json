@@ -3,16 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "nikowenku-archive": "./scripts/cli.mjs"
+  },
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "dev": "node server/index.mjs --dev",
+    "prebuild": "npm run package:cli",
     "build": "vite build",
     "start": "node server/index.mjs",
     "test": "node --test test/*.test.mjs",
     "setup": "node scripts/setup.mjs",
     "admin:create": "node scripts/create-admin.mjs",
+    "archive": "node scripts/cli.mjs",
+    "package:cli": "node scripts/package-cli.mjs",
     "check:public": "node scripts/check-public-files.mjs",
     "publish:book": "node scripts/publish-book.mjs",
     "download:full": "node scripts/download-full.mjs",
