@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -100,7 +100,7 @@ test('download preserves the source and defaults to the current working director
     cwd: f.base, encoding: 'utf8', env: { ...process.env, ARCHIVE_LIBRARY: f.library, ARCHIVE_STATE_DIR: join(f.base, 'state') }
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(JSON.parse(result.stdout).output, join(f.base, 'sample-book.txt'));
+  assert.equal(await realpath(JSON.parse(result.stdout).output), await realpath(join(f.base, 'sample-book.txt')));
   assert.equal(await readFile(join(f.base, 'sample-book.txt'), 'utf8'), await readFile(original, 'utf8'));
 });
 
