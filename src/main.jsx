@@ -28,8 +28,10 @@ function App() {
   const [page, setPage] = useState(1);
   const [importOpen, setImportOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const [toast, setToast] = useState('');
   const search = useRef(null);
+  const downloadMenu = useRef(null);
   const catalogRequest = useRef(null);
   const catalogEtag = useRef({ key: '', value: '' });
   const progress = useProgress();
@@ -87,6 +89,20 @@ function App() {
   }, [route.page]);
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(''), 4000); return () => clearTimeout(timeout); }, [toast]);
   useEffect(() => {
+    function closeDownloadMenu(event) {
+      if (!downloadMenu.current?.contains(event.target)) setDownloadMenuOpen(false);
+    }
+    function closeOnEscape(event) {
+      if (event.key === 'Escape') setDownloadMenuOpen(false);
+    }
+    document.addEventListener('pointerdown', closeDownloadMenu);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeDownloadMenu);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+  useEffect(() => {
     if (route.page !== 'read') document.title = route.page === 'tasks' ? '扫描与下载 · 文库档案' : route.page === 'register' ? '注册账号 · 文库档案' : route.page === 'login' ? '登录 · 文库档案' : admin.public ? '文库档案 · 共享书库' : '文库档案 · 本地书库';
   }, [route.page, admin.public]);
   const categories = catalog.categories || [];
@@ -106,6 +122,12 @@ function App() {
     try { await navigator.clipboard.writeText(catalog.libraryPath); setToast('书库路径已复制'); }
     catch { setToast(catalog.libraryPath); }
   }
+  async function copyNpmInstall() {
+    const command = 'npm install -g nikowenku-archive';
+    try { await navigator.clipboard.writeText(command); setToast('npm 安装命令已复制'); }
+    catch { setToast(command); }
+    setDownloadMenuOpen(false);
+  }
   if (route.page === 'read') return <Suspense fallback={<div className="full-loading">正在打开阅读器…</div>}><Reader id={route.id} chapterIndex={route.chapter}/></Suspense>;
   return <div className="app">
     {sidebarOpen && <button className="mobile-scrim" onClick={() => setSidebarOpen(false)} aria-label="收起导航"/>}
@@ -122,7 +144,7 @@ function App() {
       <div className="sidebar-bottom"><div className="local-badge"><HardDrive size={16}/><strong>{isPublic ? '共享书库' : '本地书库'}</strong><span>运行中</span></div><p>{isPublic ? '打开书库，故事随时可读。' : '文件留在本机，故事随时可读。'}</p><button onClick={openImport}><FolderOpen size={16}/>{canManage ? '管理书籍文件' : '管理登录'}<ArrowRight size={15}/></button></div>
     </aside>
     <div className="workspace">
-      <header className="topbar"><button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="打开导航"><Menu size={21}/></button><span className="breadcrumb">{isTasks ? '任务管理' : '我的藏书'} <span>/</span> {isTasks ? '扫描与下载' : isRecent ? '最近阅读' : isCompleted ? '完结作品' : '全部书籍'}</span><div className="topbar-right"><span className="local-indicator"><i/>{isPublic ? '公开书库' : '本地模式'}</span>{admin.enabled && (admin.authenticated ? <div className="admin-account"><span>{admin.username}</span><button className="text-button" onClick={logout}>退出登录</button></div> : <><button className="button secondary" onClick={() => navigate('/login')}>登录</button><button className="button secondary" onClick={() => navigate('/register')}>注册</button></>)}{canManage && <button className="button primary" onClick={openImport}><Plus size={17}/>导入书籍</button>}<a className="icon-button topbar-cli-download" href={appUrl('/nikowenku-archive-0.1.1.tgz')} download aria-label="下载命令行工具" title="下载命令行工具"><Download size={17}/></a></div></header>
+      <header className="topbar"><button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="打开导航"><Menu size={21}/></button><span className="breadcrumb">{isTasks ? '任务管理' : '我的藏书'} <span>/</span> {isTasks ? '扫描与下载' : isRecent ? '最近阅读' : isCompleted ? '完结作品' : '全部书籍'}</span><div className="topbar-right"><span className="local-indicator"><i/>{isPublic ? '公开书库' : '本地模式'}</span>{admin.enabled && (admin.authenticated ? <div className="admin-account"><span>{admin.username}</span><button className="text-button" onClick={logout}>退出登录</button></div> : <><button className="button secondary" onClick={() => navigate('/login')}>登录</button><button className="button secondary" onClick={() => navigate('/register')}>注册</button></>)}{canManage && <button className="button primary" onClick={openImport}><Plus size={17}/>导入书籍</button>}<div className="cli-download-wrap" ref={downloadMenu}><button className="icon-button topbar-cli-download" type="button" onClick={() => setDownloadMenuOpen(open => !open)} aria-label="打开 CLI 安装选项" aria-expanded={downloadMenuOpen} aria-haspopup="menu" title="CLI 安装选项"><Download size={17}/></button>{downloadMenuOpen && <div className="cli-download-menu" role="menu"><div className="cli-download-menu-title">安装命令行工具</div><a className="cli-download-menu-item" role="menuitem" href={appUrl('/nikowenku-archive-0.1.1.tgz')} download onClick={() => setDownloadMenuOpen(false)}><Download size={16}/><span><strong>下载安装包</strong><small>nikowenku-archive-0.1.1.tgz</small></span></a><button className="cli-download-menu-item" type="button" role="menuitem" onClick={copyNpmInstall}><Copy size={16}/><span><strong>使用 npm 安装</strong><code>npm install -g nikowenku-archive</code></span></button></div>}</div></div></header>
       <main className={'library-main' + (isTasks ? ' worker-main' : '')}>
         {isTasks ? <>
           <section className="page-heading"><div><h1>任务管理<span className="heading-period">.</span></h1><p>查看扫描与下载进度，管理后台任务。</p></div><button className="button secondary" onClick={() => changeSection('library')}><LibraryBig size={16}/>返回书库</button></section>
@@ -147,7 +169,7 @@ function App() {
           </article>)}</div> : <div className="empty-state"><BookOpen size={36} strokeWidth={1.3}/><h3>{query || category !== '全部' ? '暂时没有匹配的书籍' : isRecent ? '阅读记录从这里开始' : '这里，等待第一本故事'}</h3><p>{query ? '换个关键词试试，书名、作者和介绍都可以检索。' : isRecent ? '打开任意一本书，章节位置会自动保存在本机。' : '放入一份 JSON 和完整书稿，即可在这里阅读。'}</p><button className="button secondary" onClick={openImport}><Plus size={16}/>导入书籍</button></div>}
           {(catalog.total || 0) > pageSize && <nav className="book-pagination" aria-label="书籍分页"><span>共 {(catalog.total || 0).toLocaleString('zh-CN')} 本 · 每页 {pageSize} 本</span><div><button className="button secondary" disabled={currentPage === 1} onClick={() => changePage(currentPage - 1)}>上一页</button><span aria-live="polite">{currentPage} / {pageCount}</span><button className="button secondary" disabled={currentPage === pageCount} onClick={() => changePage(currentPage + 1)}>下一页</button></div></nav>}
           {catalog.invalidEntries.length > 0 && <details className="invalid-list"><summary>查看待完善的书籍文件（{catalog.invalidEntries.length}）</summary>{catalog.invalidEntries.map(item => <p key={item.file}><strong>{item.file}</strong>{item.message}</p>)}</details>}
-        </section><aside className="library-rail"><div className="rail-note"><span className="rail-icon"><FolderOpen size={23} strokeWidth={1.4}/></span><h3>放入文件，即刻入库</h3><p>一本书，一份 JSON，一份完整正文。页面会自动发现新加入的故事。</p><div className="folder-example"><span><FolderOpen size={15}/>library / my-book</span><span><FileJson size={15}/>book.json <small>书籍资料</small></span><span><BookOpen size={15}/>content.txt <small>完整正文</small></span></div><button className="button secondary" onClick={openImport}>查看导入方式<ArrowRight size={15}/></button></div><section className="cli-download"><div><Download size={17}/><h3>命令与 Codex Skill</h3></div><p>面向以轻小说为主的书库，提供命令行搜索、查看详情与下载。</p><a className="button secondary" href={appUrl('/nikowenku-archive-0.1.1.tgz')} download><Download size={15}/>下载 CLI <span>.tgz</span></a><a className="button secondary" href={appUrl('/nikowenku-archive-skill.md')} download><Download size={15}/>下载 Codex Skill</a><code>npm install -g nikowenku-archive</code><small>需要 Node.js 22 或更新版本</small></section><div className="rail-location"><span className="muted-label">书库所在位置</span><code>{catalog.libraryPath || 'library/'}</code><button onClick={copyPath}><Copy size={14}/>复制路径</button></div><div className="rail-sync"><span className="sync-mark"><Check size={13}/></span><span>每 5 秒自动发现新书<br/><small>无需重新构建或重启服务</small></span></div></aside></div>
+        </section><aside className="library-rail"><div className="rail-note"><span className="rail-icon"><FolderOpen size={23} strokeWidth={1.4}/></span><h3>放入文件，即刻入库</h3><p>一本书，一份 JSON，一份完整正文。页面会自动发现新加入的故事。</p><div className="folder-example"><span><FolderOpen size={15}/>library / my-book</span><span><FileJson size={15}/>book.json <small>书籍资料</small></span><span><BookOpen size={15}/>content.txt <small>完整正文</small></span></div><button className="button secondary" onClick={openImport}>查看导入方式<ArrowRight size={15}/></button></div><section className="cli-download"><div><Download size={17}/><h3>命令与 Codex Skill</h3></div><p>面向以轻小说为主的书库，提供命令行搜索、查看详情与下载。</p><a className="button secondary" href={appUrl('/nikowenku-archive-0.1.1.tgz')} download><Download size={15}/>下载 CLI 安装包 <span>.tgz</span></a><button className="button secondary cli-copy-command" type="button" onClick={copyNpmInstall}><Copy size={15}/>复制 npm 安装命令</button><a className="button secondary" href={appUrl('/nikowenku-archive-skill.md')} download><Download size={15}/>下载 Codex Skill</a><code>npm install -g nikowenku-archive</code><small>需要 Node.js 22 或更新版本</small></section><div className="rail-location"><span className="muted-label">书库所在位置</span><code>{catalog.libraryPath || 'library/'}</code><button onClick={copyPath}><Copy size={14}/>复制路径</button></div><div className="rail-sync"><span className="sync-mark"><Check size={13}/></span><span>每 5 秒自动发现新书<br/><small>无需重新构建或重启服务</small></span></div></aside></div>
         <footer className="page-footer"><span>文库档案</span><p>以文件为书架，以阅读为归处。</p><span>{catalog.scannedAt ? '最近扫描 ' + new Date(catalog.scannedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '正在扫描'}</span></footer>
         </>}
       </main>

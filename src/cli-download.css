@@ -10,4 +10,14 @@
 .cli-inline-link:hover{text-decoration:underline}
 .topbar-cli-download{border-color:#dce3db;color:#516252;background:#fff}
 .topbar-cli-download:hover{background:#f1f5ef;border-color:#c4d2c4;color:#365f4a}
+.cli-download-wrap{position:relative}
+.cli-download-menu{position:absolute;top:calc(100% + 10px);right:0;width:280px;padding:10px;background:#fffefb;border:1px solid #dce5d4;border-radius:8px;box-shadow:0 16px 38px #263d2430;z-index:45}
+.cli-download-menu-title{padding:5px 9px 9px;color:#71856a;font-size:11px;font-weight:600;border-bottom:1px solid #edf1e8}
+.cli-download-menu-item{width:100%;display:flex;align-items:flex-start;gap:10px;padding:12px 9px;border:0;border-radius:5px;background:transparent;color:#536a50;text-align:left;text-decoration:none;cursor:pointer;font:inherit}
+.cli-download-menu-item:hover,.cli-download-menu-item:focus-visible{background:#f1f5ed;outline:none}
+.cli-download-menu-item>svg{flex-shrink:0;margin-top:2px;color:#63815d}
+.cli-download-menu-item span{display:grid;gap:4px;min-width:0}
+.cli-download-menu-item strong{font-size:11px;font-weight:600}
+.cli-download-menu-item small,.cli-download-menu-item code{font:10px/1.5 Consolas,monospace;color:#879681;overflow-wrap:anywhere}
+.cli-copy-command{justify-self:start}
 @media(max-width:720px){.cli-inline-link{margin-top:10px;font-size:10px}}
