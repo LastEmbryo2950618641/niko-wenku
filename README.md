@@ -10,6 +10,7 @@
 
 需要 Node.js 22 或更新版本。
 
+    git submodule update --init --recursive
     npm ci
     npm run setup
     npm run build
@@ -293,3 +294,11 @@ secrets、.state、.env 已被 Git 忽略。Cookie 文件不属于书籍元数�
 ## 当前范围
 
 已实现文件驱动书库、完整元数据、文库资料与全本入口解析、按编号断点扫描、扫描后自动加入全文下载、全文导入/下载、自动上架、目录生成、阅读、公开访问与管理员账号密码登录。没有实现访客注册、评论、推荐投票、网站公告迁移或 EPUB 内文阅读。Node 服务监听本机地址，公开部署通过反向代理；支持根路径或子路径部署。EPUB/PDF 可以作为附件保留和下载。
+
+## 独立 CLI 源码仓库
+
+本仓库现在名为 `niko-wenku`，由原 `wenku-archive` 重命名并保留历史。主站组合仓库为 `niko-archive`；首页由 `niko-main` 提供，书库入口为 `/nikowenku-archive/`。默认本地独立开发仍使用服务根路径。
+
+CLI 源码现由独立的 [nico-cli](https://github.com/LastEmbryo2950618641/nico-cli) 仓库维护，固定在 `tools/nico-cli` 子模块中。首次克隆请使用 `git clone --recurse-submodules`，已有克隆执行 `git submodule update --init --recursive`。`scripts/cli.mjs` 是兼容入口；网站构建调用子模块的打包脚本，输出独立 `nikowenku-archive` 和管理工具 `nico-cli` 两种安装包。管理工具可运行 `nico-cli nikowenku-archive search "星"`，独立命令仍为 `nikowenku-archive search "星"`。
+
+网站不会依赖父目录中的其他仓库，单独递归克隆本仓库即可测试和构建。`nico-cli-0.1.0.tgz` 与独立书库包一起由 `npm run package:cli` 生成到 `public/`，管理工具当前通过离线包安装，尚未发布 npm。

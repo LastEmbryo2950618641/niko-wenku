@@ -2,6 +2,7 @@
   "name": "wenku-archive",
   "version": "0.1.1",
   "private": true,
+  "repository": { "type": "git", "url": "git+https://github.com/LastEmbryo2950618641/niko-wenku.git" },
   "type": "module",
   "bin": {
     "nikowenku-archive": "./scripts/cli.mjs"

@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
 
 const files = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', windowsHide: true }).split('\0').filter(Boolean);
+const gitlinks = new Set(execFileSync('git', ['ls-files', '--stage'], { encoding: 'utf8', windowsHide: true }).split('\n').filter(line => line.startsWith('160000 ')).map(line => line.split('\t')[1]));
 const blocked = /^(?:library|secrets|\.state|node_modules|dist|\.playwright-cli|\.playwright-mcp|output)\/|^download-queue\.json$|(?:^|\/)\.env(?:\.|$)|\.(?:key|pem|pfx|p12|tar|zip)(?:\.gz)?$/i;
 const secrets = [
   /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
@@ -13,6 +14,7 @@ const secrets = [
 ];
 const issues = [];
 for (const path of files) {
+  if (gitlinks.has(path)) continue;
   if (path !== '.env.example' && blocked.test(path)) { issues.push(path + ': 不应公开的运行数据或凭据文件'); continue; }
   if ((await stat(path)).size > 5 * 1024 * 1024) { issues.push(path + ': 超出源码文件大小上限，请将运行数据移出 Git'); continue; }
   const text = await readFile(path, 'utf8');
