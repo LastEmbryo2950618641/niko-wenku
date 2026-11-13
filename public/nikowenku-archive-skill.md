@@ -1,29 +1,43 @@
 ---
 name: nikowenku-archive
-description: "Use when searching the Wenku Archive, a library focused mainly on light novels, inspecting metadata, exporting text, or looking up the cross-platform nikowenku-archive command."
+description: "Use for Chinese light novel library searches, book details, metadata lookup, and full-text exports with the cross-platform nikowenku-archive CLI."
 ---
 
 # Niko Wenku Archive
 
 The Wenku Archive focuses mainly on light novels and may also contain other works. Use the `nikowenku-archive` command for archive searches, book details, and full-text exports. This Skill is also the command reference. When the user asks to perform an operation, run the command and report its actual result; when they ask how it works, answer from this reference without running it.
 
+## Website and Library
+
+- **Main homepage:** `https://111.229.32.85/` is the site's website-card collection and navigation portal. The light novel library is the first default card; the homepage itself is not the book catalog.
+- **Light novel library:** `https://111.229.32.85/nikowenku-archive/` opens the Wenku website for browsing, searching, viewing book details, reading online, and downloading archived text.
+- **CLI base URL:** `http://111.229.32.85/nikowenku-archive/` remains the command's default. When setting `--site` or `ARCHIVE_SITE_URL`, include `/nikowenku-archive/`; for example, `--site https://111.229.32.85/nikowenku-archive/`.
+
+For a request to open the main site, provide the homepage URL. For a request to find or open a book in the website, use the library URL; for search results, metadata, or a local text export, use the CLI commands below. Public read requests use the primary library backend by default and can automatically fail over to its read-only standby; clients keep the same public URL.
+
 ## Install
 
-Requires Node.js 22 or newer and npm. The downloaded `.tgz` has no third-party runtime dependencies and can be installed from disk offline.
+Requires Node.js 22 or newer and npm. The package has no third-party runtime dependencies. For npm installation use `npm install -g nikowenku-archive`; the downloaded `.tgz` can also be installed from disk offline.
 
 Windows PowerShell:
 
 ```powershell
-npm install -g --offline .\nikowenku-archive-0.1.1.tgz
+  npm install -g --offline .\nikowenku-archive-0.1.3.tgz
 ```
 
 Linux or macOS:
 
 ```sh
-npm install -g --offline ./nikowenku-archive-0.1.1.tgz
+npm install -g --offline ./nikowenku-archive-0.1.3.tgz
 ```
 
 To install this Skill in the current project, place the downloaded `nikowenku-archive-skill.md` at `.agents/skills/nikowenku-archive/SKILL.md`. PowerShell:
+
+For Codex, Claude Code, Cursor, and other compatible agents, it can also be installed directly from GitHub with the Agent Skills CLI:
+
+```sh
+npx skills add LastEmbryo2950618641/nico-cli --skill nikowenku-archive
+```
 
 ```powershell
 New-Item -ItemType Directory -Force .agents\skills\nikowenku-archive | Out-Null
@@ -43,7 +57,7 @@ Windows, Linux, and macOS use the same Node.js CLI. To check that the command is
 
 ## Commands
 
-The CLI connects to the public archive at `http://111.229.32.85` by default. Use the book ID returned by `search` with `info` or `download`.
+The CLI connects to the public archive at `http://111.229.32.85/nikowenku-archive/` by default. Use the book ID returned by `search` with `info` or `download`.
 
 ```sh
 nikowenku-archive search "西游记" --limit 10
@@ -51,6 +65,8 @@ nikowenku-archive info xiyouji
 nikowenku-archive info xiyouji --json
 nikowenku-archive download xiyouji --output "./西游记.txt"
 ```
+
+To use another server, pass its base URL, including a path prefix, with `--site https://example.org/nikowenku-archive/` or set `ARCHIVE_SITE_URL`.
 
 PowerShell paths can use backslashes, for example `--output .\西游记.txt`. Search supports titles, original titles, authors, descriptions, and tags. The default limit is 20; `--limit` accepts 1–100. `info --json` returns the complete metadata, chapter list, and file information.
 
