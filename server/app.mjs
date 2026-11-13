@@ -1,12 +1,10 @@
 import { createServer } from 'node:http';
-import { createReadStream } from 'node:fs';
-import { stat, readFile, realpath } from 'node:fs/promises';
-import { resolve, join, relative, extname, isAbsolute, dirname } from 'node:path';
+import { createReadStream, constants } from 'node:fs';
+import { stat, readFile, realpath, access, mkdir } from 'node:fs/promises';
+import { resolve, join, relative, extname, isAbsolute, dirname, basename } from 'node:path';
 import { createHash } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { createLibrary, publishBundle, ArchiveError } from './library.mjs';
-import { createWorkerController } from './worker-control.mjs';
-import { createAdminAuth } from './admin-auth.mjs';
 import { createCaptchaService } from './captcha.mjs';
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.avif': 'image/avif', '.gif': 'image/gif', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
@@ -26,18 +24,45 @@ async function readJson(req, maxBytes = 180 * 1024 * 1024) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { throw new ArchiveError('JSON 格式不正确'); }
 }
-export async function createAppServer({ libraryRoot, webRoot, dev = false, worker, adminAuthFile, publicOrigin, captchaService = createCaptchaService() }) {
+export async function createAppServer({ libraryRoot, webRoot, dev = false, worker, adminAuthFile, publicOrigin, readOnly = false, stateDir, captchaService = createCaptchaService() }) {
   let publicUrl;
   if (publicOrigin) {
     publicUrl = new URL(publicOrigin);
     if (!['http:', 'https:'].includes(publicUrl.protocol) || publicUrl.username || publicUrl.password || publicUrl.pathname !== '/' || publicUrl.search || publicUrl.hash) throw new Error('公开地址必须是完整的 HTTP/HTTPS origin，不包含路径或账号');
-    if (!adminAuthFile) throw new Error('公开部署必须配置管理登录（ARCHIVE_AUTH_FILE）');
+    if (!readOnly && !adminAuthFile) throw new Error('公开部署必须配置管理登录（ARCHIVE_AUTH_FILE）');
     if (dev) throw new Error('公开部署请先构建前端，不使用开发服务器');
   }
-  const adminAuth = await createAdminAuth(adminAuthFile, captchaService);
-  const library = createLibrary(libraryRoot, { indexPath: join(worker?.stateDir || join(dirname(resolve(libraryRoot)), '.state'), 'library-index.json') });
-  const workerControl = worker ? createWorkerController({ ...worker, libraryRoot }) : null;
-  const publicRoot = resolve(webRoot);
+  if (readOnly) {
+    if (dev) throw new Error('只读 API 不启动开发服务器');
+    const within = (root, path) => { const rel = relative(root, path); return !rel || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + (process.platform === 'win32' ? '\\' : '/'))); };
+    if (!stateDir || within(resolve(libraryRoot), resolve(stateDir))) throw new Error('只读 API 需要书库以外的独立检索状态目录');
+    try {
+      libraryRoot = await realpath(libraryRoot);
+      if (!(await stat(libraryRoot)).isDirectory()) throw new Error('not a directory');
+      await access(libraryRoot, constants.R_OK | constants.X_OK);
+    } catch { throw new Error('只读 API 需要已存在且可读取的书库目录'); }
+    // Resolve existing parents before mkdir, so a symlink cannot cause even an
+    // empty cache directory to be created within the shared read-only library.
+    let ancestor = resolve(stateDir);
+    const missing = [];
+    for (;;) {
+      try { ancestor = await realpath(ancestor); break; }
+      catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        if (dirname(ancestor) === ancestor) throw error;
+        missing.unshift(basename(ancestor));
+        ancestor = dirname(ancestor);
+      }
+    }
+    stateDir = resolve(ancestor, ...missing);
+    if (within(libraryRoot, stateDir)) throw new Error('只读 API 需要书库以外的独立检索状态目录');
+    await mkdir(stateDir, { recursive: true });
+  }
+  const adminAuth = readOnly ? null : await (await import('./admin-auth.mjs')).createAdminAuth(adminAuthFile, captchaService);
+  const library = createLibrary(libraryRoot, { indexPath: join(stateDir || worker?.stateDir || join(dirname(resolve(libraryRoot)), '.state'), 'library-index.json') });
+  const workerControl = !readOnly && worker ? (await import('./worker-control.mjs')).createWorkerController({ ...worker, libraryRoot }) : null;
+  const publicRoot = readOnly ? null : resolve(webRoot);
+  if (readOnly) await library.scan({ waitForRefresh: true });
   const vite = dev ? await (await import('vite')).createServer({
     server: { middlewareMode: true, fs: { deny: ['.env', '.env.*', '**/.git/**', '**/secrets/**', '**/library/**', '**/.state/**'] } },
     appType: 'spa'
@@ -52,6 +77,10 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
       const origin = publicUrl && host === publicUrl.host ? publicUrl.origin : 'http://' + host;
       const url = new URL(req.url || '/', origin);
       if (url.origin !== origin || (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && (!publicUrl || url.host !== publicUrl.host))) throw new ArchiveError('不允许访问此主机地址', 403);
+      if (readOnly) {
+        if (!['GET', 'HEAD'].includes(req.method)) throw new ArchiveError('备用服务仅支持读取', 405);
+        if (!['/api/health', '/api/library'].includes(url.pathname) && !/^\/api\/books\/[^/]+(?:\/(chapters|files)\/[^/]+)?$/.test(url.pathname)) throw new ArchiveError('接口不存在', 404);
+      }
       if (!['GET', 'HEAD', 'POST'].includes(req.method)) throw new ArchiveError('不支持的方法', 405);
       const currentSession = adminAuth?.session(req);
       const authState = (session = currentSession) => ({ enabled: !!adminAuth, registrationEnabled: !!adminAuth, authenticated: !adminAuth || !!session, username: session?.username || null, role: session?.role || null, canManage: !adminAuth || session?.role === 'admin', public: !!publicUrl });
@@ -85,8 +114,14 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
         if (!currentSession) throw new ArchiveError('请先登录管理账号', 401);
         if (currentSession.role !== 'admin') throw new ArchiveError('此功能仅限管理员使用', 403);
       }
-      if (url.pathname === '/api/health') return json(res, 200, { ok: true, name: '文库档案' });
-      if (url.pathname === '/api/library' && req.method === 'GET') {
+      if (url.pathname === '/api/health') {
+        if (readOnly) {
+          try { await access(libraryRoot, constants.R_OK | constants.X_OK); }
+          catch { throw new ArchiveError('备用书库暂时不可读取', 503); }
+        }
+        return json(res, 200, { ok: true, name: '文库档案', ...(readOnly ? { readOnly: true } : {}) });
+      }
+      if (url.pathname === '/api/library' && (req.method === 'GET' || readOnly && req.method === 'HEAD')) {
         const catalog = await library.scan({ maxAgeMs: 30000, waitForRefresh: url.searchParams.get('refresh') === '1' });
         const page = Math.max(1, Math.min(1000000, Number.parseInt(url.searchParams.get('page') || '1', 10) || 1));
         const pageSize = Math.max(1, Math.min(48, Number.parseInt(url.searchParams.get('pageSize') || '24', 10) || 24));

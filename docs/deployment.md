@@ -86,6 +86,63 @@ systemctl --user restart wenku-archive
 
 服务停止时先请求下载器安全停止，扫描断点和已完成文件保存在数据目录。再次登录任务页启动后继续。发布前记录当前 Git commit，回滚时切回该 commit、重新构建并重启；无需删除运行数据。
 
+组合站点的 Nginx 已直接提供静态前端时，只更新 `/srv/niko-archive/niko-wenku/dist/` 即可发布页面，**无需重启主后端或任务下载器**。只有主后端代码升级才需要上述 restart；只读备用有自己的发布目录和服务，不能一起停止或覆盖。
+
+## CLI 公开 API 主备冗余
+
+`nikowenku-archive` 继续使用原来的公开地址。Nginx 将搜索、资料、章节、封面和下载请求优先交给 `127.0.0.1:4178` 的主服务；连接失败、响应超时或返回 500/502/503/504 时，在响应发送给客户端前重试 `127.0.0.1:4179` 的只读备用。主服务恢复后，在短暂故障探测窗口结束后重新优先走主服务。404、401、403 不触发切换。现有 npm 客户端无须升级或改地址。
+
+两套公开读取路径均保留：`/nikowenku-archive/api/library`、`/nikowenku-archive/api/books/...`，以及旧客户端的 `/api/library`、`/api/books/...`。登录、会话、扫描状态、任务启停和导入接口始终只连接主服务，主服务离线时这些管理功能也会离线；不会将写操作重试到备用。
+
+备用服务 `niko-wenku-read-api.service` 的约束：
+
+- 只开放读取接口的 GET/HEAD；所有写请求返回 405，任务和账号接口不开放。
+- 不配置任务队列或管理凭据，不创建 worker，不运行来源站扫描、书籍下载、书库更新或导入任务。
+- 通过现有目录读取书库，systemd 将书库挂为只读；只有独立的 `/var/lib/niko-wenku-read-api/` 检索缓存可写。此处生成目录索引不是更新书库，不会更改正文或元数据。
+- 运行代码固定在 `/srv/niko-archive/services/wenku-read-api/releases/<版本>/`，`current` 指向当前版本；不使用主后端代码目录，也不会被网页发布覆盖。
+- 只绑定本机 4179，进程异常退出由 systemd 自动重启；无第三方 npm 运行依赖。
+
+### 安装与独立升级
+
+在 Linux 服务器上的 `niko-wenku` 源码目录执行（替换用户名、真实书库路径、公开 origin 和站点配置路径）：
+
+```sh
+node --test test/read-api.test.mjs test/read-failover-config.test.mjs
+node deploy/test-read-failover.mjs
+sudo bash deploy/install-read-api.sh \
+  liuqi /home/liuqi/.local/share/wenku-archive/library \
+  http://111.229.32.85 /etc/nginx/sites-enabled/worldseed
+```
+
+隔离集成检查需要本机安装 Nginx，只使用临时目录、高位本机端口和临时测试进程，**不会停止实际主服务或重载生产 Nginx**。它验证主优先、故障切换、超时、404 不切换、恢复回切、两套地址、正文哈希和管理接口隔离。
+
+安装脚本只复制备用需要的六个原生 Node 模块，先预热独立索引并确认健康，再为现有站点插入带标记的 include，保留 HTTPS、首页聊天、其他应用和主服务管理路由。Nginx 配置先备份并执行 `nginx -t`，通过后才平滑 reload，校验或 reload 失败则恢复配置。备用启动失败时也会恢复前一备用版本。重新执行同一命令即可升级备用，不重启主服务；新安装和升级均不自动重启扫描/下载任务。
+
+不使用 systemd 时也可单独运行，但书库的操作系统级只读权限需自己配置：
+
+```sh
+node server/read-api.mjs --library /existing/library \
+  --state-dir /separate/read-api-state --public-origin https://books.example.org
+```
+
+入口有意不使用主服务的 `ARCHIVE_PORT`、`ARCHIVE_STATE_DIR`、`ARCHIVE_QUEUE` 或 `ARCHIVE_AUTH_FILE`。对应环境变量为 `ARCHIVE_READ_PORT`（默认 4179）、`ARCHIVE_LIBRARY`、`ARCHIVE_READ_STATE_DIR` 和 `ARCHIVE_PUBLIC_ORIGIN`。书库必须已存在，缓存目录必须显式指定且位于书库之外。
+
+### 检查与回滚
+
+```sh
+systemctl status niko-wenku-read-api.service
+curl -fsS http://127.0.0.1:4179/api/health
+curl -fsS http://127.0.0.1:4179/api/library?pageSize=1
+journalctl -u niko-wenku-read-api.service --since '10 minutes ago'
+sudo nginx -t
+```
+
+备用健康响应包含 `readOnly: true`。公网健康接口正常从主服务返回；主服务出现故障而备用接管时会带上该字段。备用只扫描本地目录来维护索引，不会访问下载源站。
+
+发布日志会打印当前和上一备用版本。需要回滚备用时，先将 `current` 链接指向已验证的上一版本，再执行 `sudo systemctl restart niko-wenku-read-api.service`。Nginx 的原配置和 include 同目录保存为 `*.before-read-failover-<时间戳>`；回滚网关时恢复同一批备份（首次安装时删除新建的三个 read-failover 配置文件和站点标记块），`sudo nginx -t` 通过后再 `sudo systemctl reload nginx`。不要停止或重启 `wenku-archive.service` 来测试故障切换。
+
+这是**同机、独立进程、共享只读书库**的冗余，适用于主进程故障和主后端发布，不覆盖整台服务器、Nginx、网络或共享磁盘故障。Nginx 只能在响应尚未发送时选择备用；已经开始传输的下载中途断开，现有 CLI 会报错并清理临时文件，需要重新执行下载，不具备自动续传。备用不是正文备份，完整灾备需要另一台机器和独立的数据副本。
+
 ## 仓库与运行数据
 
 源码采用 MIT 许可证，原创示例可随项目分享。Git 默认排除完整运行书库、实际队列、Cookie、账号配置、日志及临时文件；它们不是部署代码。第三方书籍的内容权利不因本软件许可证而改变。公开实例仅放置自己有权公开分享的内容。
