@@ -1,0 +1,132 @@
+/* Ribbon, stitched satin and scalloped lace, kept outside text and hit targets. */
+.library-app, .reader {
+  --ribbon: #f5b7c8;
+  --ribbon-deep: #ad617f;
+  --lace: #f7e4ed;
+  --trim-line: rgb(247 228 237 / 22%);
+  --motion-enter: cubic-bezier(.2, .65, .3, 1);
+}
+.ribbon-bow { position: relative; display: inline-block; flex: none; width: 32px; height: 25px; vertical-align: middle; color: var(--ribbon); pointer-events: none; }
+.ribbon-bow > span { position: absolute; display: block; }
+.bow-loop { top: 10%; width: 45%; height: 60%; background: var(--ribbon); opacity: .9; }
+.bow-loop-left { left: 2%; clip-path: polygon(0 0, 100% 30%, 100% 70%, 0 100%); border-radius: 3px; transform: rotate(6deg); }
+.bow-loop-right { right: 2%; clip-path: polygon(0 30%, 100% 0, 100% 100%, 0 70%); border-radius: 3px; transform: rotate(-6deg); }
+.bow-tail { top: 45%; width: 29%; height: 52%; background: var(--ribbon); clip-path: polygon(0 0, 100% 0, 88% 100%, 50% 74%, 8% 100%); }
+.bow-tail-left { left: 22%; transform: rotate(22deg); }
+.bow-tail-right { right: 22%; transform: rotate(-22deg); }
+.bow-knot { left: 42%; top: 30%; width: 16%; height: 32%; border-radius: 3px; background: var(--ribbon-deep); }
+.lace-divider { display: flex; align-items: center; gap: 15px; min-width: 0; height: 24px; color: var(--lace); pointer-events: none; }
+.lace-rail { flex: 1; min-width: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--trim-line)); }
+.lace-rail:last-child { transform: scaleX(-1); }
+.lace-weave { display: inline-flex; align-items: center; justify-content: center; flex: none; gap: 5px; height: 24px; padding: 0 7px; color: var(--lace); }
+.lace-weave > svg { width: 18px; height: 18px; opacity: .48; stroke-width: 1.1 !important; }
+.lace-weave > .lace-flower-center { width: 24px; height: 24px; opacity: .7; color: var(--ribbon); transform: rotate(45deg); }
+.lace-eyelet { display: block; width: 20px; height: 12px; background: repeating-linear-gradient(45deg, transparent 0 2px, var(--trim-line) 2px 2.6px, transparent 2.6px 4px), repeating-linear-gradient(-45deg, transparent 0 2px, var(--trim-line) 2px 2.6px, transparent 2.6px 4px); clip-path: polygon(0 50%, 50% 0, 100% 50%, 50% 100%); }
+
+/* The original mascot remains bare; ornaments have their own space in the lockup. */
+.library-brand { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 12px; border-bottom: 0; padding-bottom: 10px; margin-bottom: 20px; }
+.brand-portrait { transition: transform .25s var(--motion-enter); }
+.brand-portrait > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.library-brand strong { display: inline-flex; align-items: center; gap: 6px; transition: color .2s, text-shadow .2s; }
+.brand-sparkle { color: var(--rose); opacity: .7; }
+.brand-lace { grid-column: 1 / -1; gap: 7px; height: 20px; }
+.brand-lace .lace-weave { gap: 5px; padding: 0; }
+.brand-lace .lace-weave > svg { width: 10px; height: 10px; }
+.brand-lace .lace-weave > .lace-flower-center { width: 15px; height: 15px; }
+.brand-lace .lace-eyelet { width: 10px; height: 8px; }
+.library-brand:is(:hover, :focus-visible) .brand-portrait { transform: translateY(-2px) rotate(-3deg); }
+.library-brand:is(:hover, :focus-visible) strong { color: var(--rose); text-shadow: 0 0 16px rgb(245 183 200 / 16%); }
+.story-cat { width: 62px; height: 62px; left: 28px; top: 14px; border: 0; border-radius: 0; background: none; transform: none; }
+.story-emblem > .story-bow { position: absolute; right: 0; bottom: 21px; width: 26px; height: 22px; transform: rotate(-9deg); }
+.story-emblem .paw-trail { right: auto; left: 8px; bottom: -1px; }
+
+/* Stitching marks selected controls; decoration never changes their dimensions. */
+.library-app .sidebar-nav button { position: relative; }
+.library-app .sidebar-nav button::after { content: ''; position: absolute; top: 9px; bottom: 9px; left: 5px; border-left: 1px dashed rgb(245 183 200 / 60%); opacity: 0; transform: scaleY(.4); transition: opacity .2s, transform .2s; pointer-events: none; }
+.library-app .sidebar-nav button.selected::after { opacity: 1; transform: scaleY(1); }
+.library-app .sidebar-nav button:is(:hover, :focus-visible) { transform: translateX(2px); }
+.shelf-stats-lace { margin: 18px 0 4px; }
+.shelf-stats { border-top: 0; margin-top: 0; padding-top: 12px; }
+.shelf-stats > div strong { transition: color .2s; }
+.shelf-stats > div:hover strong { color: var(--rose); }
+.shelf-search { transition: border-color .2s, box-shadow .2s, background-color .2s; }
+.shelf-search:focus-within { background: rgb(24 25 42 / 85%); }
+.shelf-search:focus-within > svg { color: var(--rose); }
+.shelf-categories button { transition: color .2s, background-color .2s, border-color .2s, transform .2s; }
+.shelf-categories button:is(:hover, :focus-visible) { transform: translateY(-2px); border-color: rgb(245 183 200 / 40%); }
+.shelf-categories .ribbon-bow { width: 17px; height: 15px; }
+.shelf-book-paw .ribbon-bow { width: 23px; height: 20px; }
+.shelf-book-tags button { transition: background-color .2s, color .2s, border-color .2s; }
+.shelf-book-tags button:is(:hover, :focus-visible) { color: var(--rose); background: rgb(245 183 200 / 9%); border-color: rgb(245 183 200 / 35%); }
+.shelf-empty-icon > .ribbon-bow { position: absolute; width: 24px; height: 20px; bottom: -3px; left: 3px; transform: rotate(-10deg); }
+.shelf-footer-lace { margin-top: 22px; }
+.shelf-footer-lace + .shelf-footer { border-top: 0; margin-top: 0; padding-top: 12px; }
+.library-app :is(.button, .icon-button, .shelf-pagination button):active:not(:disabled) { transform: scale(.97); }
+.library-app .shelf-pagination button .shelf-page-paw { transition: transform .2s; }
+.library-app .shelf-pagination button:hover .shelf-page-paw { transform: translateX(-50%) rotate(8deg); }
+
+/* Animate actual state changes once; background polling must not replay them. */
+.library-app .library-main { animation: library-section-in .3s var(--motion-enter) both; }
+.shelf-book { animation: library-book-in .32s var(--motion-enter) both; animation-delay: calc(var(--tile-order, 0) * 18ms); }
+.library-app .empty-state { animation: library-section-in .25s var(--motion-enter) both; }
+.library-app .toast { animation: library-dialog-in .22s var(--motion-enter) both; }
+@keyframes library-section-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes library-book-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+@keyframes library-dialog-in { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes library-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* The same trims continue into details, installation, import and authentication. */
+.library-app .modal[open] { animation: library-dialog-in .23s var(--motion-enter); }
+.library-app .modal[open]::backdrop { animation: library-backdrop-in .2s ease; }
+.library-app .modal-header h2 { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.library-app .modal-header h2 > .ribbon-bow { width: 28px; height: 24px; }
+.modal-lace { margin: 6px 0 16px; }
+.library-app .detail-heading > .cover-image { border-color: rgb(245 183 200 / 25%); }
+.library-app :is(.detail-description h3, .detail-chapters h3) { position: relative; padding-left: 12px; }
+.library-app :is(.detail-description h3, .detail-chapters h3)::before { content: ''; position: absolute; left: 0; top: .25em; width: 4px; height: 12px; border-radius: 3px; background: var(--rose); transform: rotate(-9deg); }
+.library-app :is(.detail-chapters button, .attachment-list a, .install-copy, .drop-zone) { transition: color .2s, border-color .2s, background-color .2s, transform .2s; }
+.library-app :is(.detail-chapters button, .attachment-list a):hover { color: var(--rose); transform: translateX(2px); }
+.library-app .drop-zone { border-style: dashed; border-color: rgb(245 183 200 / 28%); }
+.library-app .drop-zone:hover .drop-icon { transform: translateY(-3px); }
+.library-app .drop-icon { transition: transform .2s var(--motion-enter); }
+.library-app :is(.admin-card, .worker-panel) { position: relative; }
+.library-app .admin-card h2 { display: flex; align-items: center; gap: 10px; }
+.library-app .admin-card h2 > .ribbon-bow { width: 27px; height: 23px; }
+.library-app .admin-card input { transition: border-color .2s, box-shadow .2s; }
+.library-app .admin-card input:focus { border-color: var(--rose); box-shadow: 0 0 0 3px rgb(245 183 200 / 8%); }
+.library-app .worker-title h2 { display: flex; align-items: center; gap: 9px; }
+.library-app .worker-title h2 > .ribbon-bow { width: 25px; height: 22px; }
+.library-app .worker-heading { border-bottom: 1px dashed var(--trim-line); padding-bottom: 16px; }
+.library-app .worker-lane-label > svg { color: var(--rose); }
+.library-app .worker-lane progress::-webkit-progress-value { transition: width .35s ease; }
+
+/* Reader ornaments stay in its navigation and chapter margins, never the prose. */
+.reader { --ribbon: var(--r-muted); --ribbon-deep: var(--r-ink); --trim-line: var(--r-line); }
+.reader .ribbon-bow { width: 22px; height: 19px; }
+.reader-toc h2 { display: flex; align-items: center; gap: 8px; }
+.reader-toc .ribbon-bow { opacity: .7; }
+.reader .reader-chapter-lace { margin: -17px 0 24px; opacity: .65; }
+.reader .reader-chapter-info { border-bottom-color: transparent; }
+.reader :is(.icon-button, .chapter-navigation .button, .reader-toc nav > button) { transition: color .2s, background-color .2s, border-color .2s; }
+.reader .chapter-navigation { border-top-style: dashed; }
+.reader :is(.icon-button, .chapter-navigation .button):active:not(:disabled) { transform: scale(.97); }
+
+@media (max-width: 1023px) {
+  .library-brand.library-brand-compact { display: flex; gap: 7px; margin: 0; padding: 0; }
+  .library-brand.library-brand-compact small { display: none; }
+  .library-brand-compact .brand-lace { display: none; }
+  .library-brand-compact .brand-sparkle { display: none; }
+}
+@media (max-width: 759px) {
+  .story-cat { width: 44px; height: 44px; left: 4px; top: 16px; }
+  .story-emblem > .story-bow { width: 18px; height: 16px; right: 0; bottom: 15px; }
+  .story-emblem .paw-trail { left: 0; bottom: 0; }
+  .lace-divider { gap: 10px; }
+  .lace-weave { gap: 7px; }
+  .shelf-footer-lace { gap: 8px; }
+  .library-app .modal-header h2 { gap: 7px; }
+  .library-app .modal-header h2 > .ribbon-bow { width: 24px; height: 21px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.library-app, .reader) *, :is(.library-app, .reader) *::before, :is(.library-app, .reader) *::after, .library-app .modal::backdrop { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

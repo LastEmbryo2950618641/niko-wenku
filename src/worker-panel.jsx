@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Download, Play, RefreshCw, ScanLine, Square } from 'lucide-react';
 import { api, bytes } from './lib';
 import './worker-panel.css';
+import { RibbonBow } from './library-ornaments';
 
 const statusLabels = { downloading: '运行中', discovering: '运行中', processing: '运行中', idle: '等待新任务', paused: '已暂停', auth_required: '需要登录', cooldown: '限速等待', stopped: '已停止', stopping: '正在停止', starting: '正在启动', not_started: '尚未启动', config_error: '配置有误', unavailable: '未配置后台任务' };
 const phaseLabels = { preparing: '准备下载', metadata: '读取书籍资料', download_page: '读取全本下载入口', text: '接收全本文本', validating: '校验正文', cover: '保存封面', publishing: '写入本地书库' };
@@ -57,7 +58,7 @@ export default function WorkerPanel({ onUnauthorized }) {
   const available = state?.available;
   return <section className="worker-panel" aria-labelledby="worker-heading" aria-busy={!!busy}>
     <div className="worker-heading">
-      <div className="worker-title"><h2 id="worker-heading">扫描与下载</h2><span className={'worker-status ' + (running && !['auth_required', 'cooldown', 'config_error'].includes(status) ? 'is-running' : '')} role="status"><i/>{state || busy ? statusLabels[status] || '运行中' : '正在连接后台'}</span></div>
+      <div className="worker-title"><h2 id="worker-heading"><RibbonBow/>扫描与下载</h2><span className={'worker-status ' + (running && !['auth_required', 'cooldown', 'config_error'].includes(status) ? 'is-running' : '')} role="status"><i/>{state || busy ? statusLabels[status] || '运行中' : '正在连接后台'}</span></div>
       <div className="worker-controls">
         <button className="button primary" onClick={() => control('start')} disabled={!available || running || !!busy}>{busy === 'start' ? <RefreshCw size={14} className="spin"/> : <Play size={14}/>} {busy === 'start' ? '正在启动' : '启动任务'}</button>
         <button className="button secondary" onClick={() => control('stop')} disabled={!available || !running || !!busy}>{busy === 'stop' ? <RefreshCw size={14} className="spin"/> : <Square size={13}/>} {busy === 'stop' ? '正在停止' : '停止任务'}</button>

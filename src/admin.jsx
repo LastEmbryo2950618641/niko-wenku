@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, appUrl, navigate } from './lib';
 import './admin.css';
+import { RibbonBow } from './library-ornaments';
 
 export function useAdminSession() {
   const [session, setSession] = useState(null);
@@ -64,7 +65,7 @@ export function AuthPage({ admin, mode = 'login', management = false }) {
     finally { setBusy(false); }
   }
   return <section className="admin-card" aria-labelledby="admin-heading">
-    <h2 id="admin-heading">{register ? '注册账号' : management ? '管理登录' : '登录'}</h2>
+    <h2 id="admin-heading"><RibbonBow/>{register ? '注册账号' : management ? '管理登录' : '登录'}</h2>
     <p>{register ? '填写账号、密码和图片验证码即可注册。' : '书库可直接阅读，管理任务需要管理员登录。'}</p>
     <form onSubmit={submit}>
       <label htmlFor="auth-username">账号<input id="auth-username" name="username" autoComplete="username" maxLength={64} value={username} onChange={event => setUsername(event.target.value)} required disabled={busy}/></label>

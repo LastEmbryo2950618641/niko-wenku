@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { BookOpen, Check, Download, FileText, FolderOpen, Plus, Upload, X } from 'lucide-react';
 import { api, appUrl, bookUrl, bytes, date, navigate, readBook, words } from './lib';
 import { languageLabel } from '../shared/language.mjs';
+import { LaceDivider, RibbonBow } from './library-ornaments';
 
 export function Cover({ book, large = false }) {
   return book.coverUrl ? <img className={'cover-image ' + (large ? 'cover-large' : '')} src={appUrl(book.coverUrl)} alt={book.title + '封面'} loading="lazy"/> :
@@ -9,6 +10,7 @@ export function Cover({ book, large = false }) {
 }
 export function Modal({ title, onClose, children, wide = false }) {
   const ref = useRef(null);
+  const titleId = useId();
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
@@ -16,8 +18,8 @@ export function Modal({ title, onClose, children, wide = false }) {
     dialog.showModal();
     return () => dialog.close();
   }, []);
-  return <dialog ref={ref} className={'modal ' + (wide ? 'modal-wide' : '')} onCancel={event => { event.preventDefault(); closeRef.current(); }} onClick={event => { if (event.target === event.currentTarget) closeRef.current(); }}>
-    <div className="modal-inner"><header className="modal-header"><h2>{title}</h2><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={20}/></button></header>{children}</div>
+  return <dialog ref={ref} aria-labelledby={titleId} className={'modal ' + (wide ? 'modal-wide' : '')} onCancel={event => { event.preventDefault(); closeRef.current(); }} onClick={event => { if (event.target === event.currentTarget) closeRef.current(); }}>
+    <div className="modal-inner"><header className="modal-header"><h2 id={titleId}><RibbonBow/>{title}</h2><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={20}/></button></header><LaceDivider className="modal-lace"/>{children}</div>
   </dialog>;
 }
 export function ImportDialog({ onClose, onPublished, libraryPath }) {
