@@ -104,6 +104,16 @@ systemctl --user restart wenku-archive
 
 ### 安装与独立升级
 
+备用入口、实现源码、systemd 模板、安装脚本和 Nginx 配置均跟踪在 `niko-wenku` Git 仓库中。组合仓库的 `npm run package:site` 会将这些文件带入发布包，`npm run deploy` 则在发布网页前自动运行 `deploy/ensure-read-api.mjs`：只检查本机备用的健康响应和书目读取，健康就跳过，不变更代码版本、PID 或 Nginx 配置；不可用才调用安装脚本重新部署并启用。修复后仍不可用则退出失败，保留当前网页，不继续发布。
+
+只检查并按需修复备用（不主动升级健康服务）：
+
+```sh
+sudo node deploy/ensure-read-api.mjs \
+  liuqi /home/liuqi/.local/share/wenku-archive/library \
+  http://111.229.32.85 /etc/nginx/sites-enabled/worldseed
+```
+
 在 Linux 服务器上的 `niko-wenku` 源码目录执行（替换用户名、真实书库路径、公开 origin 和站点配置路径）：
 
 ```sh
