@@ -6,6 +6,7 @@ import './style.css';
 import { LibraryShell } from './library-shell';
 import './library-theme.css';
 import './library-ornaments.css';
+import './library-skins.css';
 
 const Reader = lazy(() => import('./reader'));
 const initialCatalog = { books: [], categories: [], invalidEntries: [], stats: { total: 0, completed: 0, authors: 0, bytes: 0 }, total: 0, pageCount: 1 };
