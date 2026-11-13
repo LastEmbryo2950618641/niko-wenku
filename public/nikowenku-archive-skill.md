@@ -36,7 +36,7 @@ To install this Skill in the current project, place the downloaded `nikowenku-ar
 For Codex, Claude Code, Cursor, and other compatible agents, it can also be installed directly from GitHub with the Agent Skills CLI:
 
 ```sh
-npx skills add LastEmbryo2950618641/nico-cli --skill nikowenku-archive
+npx skills add LastEmbryo2950618641/niko-cli --skill nikowenku-archive
 ```
 
 ```powershell

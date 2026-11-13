@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const output = fileURLToPath(new URL('../public/', import.meta.url));
-const tools = new URL('../tools/nico-cli/', import.meta.url);
+const tools = new URL('../tools/niko-cli/', import.meta.url);
 await mkdir(output, { recursive: true });
 const result = spawnSync(process.execPath, [fileURLToPath(new URL('scripts/pack.mjs', tools)), '--output', output], {
   stdio: 'inherit', env: process.env, windowsHide: true

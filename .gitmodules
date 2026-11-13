@@ -1,3 +1,3 @@
-[submodule "tools/nico-cli"]
-	path = tools/nico-cli
-	url = https://github.com/LastEmbryo2950618641/nico-cli.git
+[submodule "tools/niko-cli"]
+	path = tools/niko-cli
+	url = https://github.com/LastEmbryo2950618641/niko-cli.git

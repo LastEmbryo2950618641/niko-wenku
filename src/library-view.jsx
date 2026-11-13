@@ -20,7 +20,7 @@ export function CliInstallDialog({ onClose, onCopy }) {
       <section><span className="install-option-icon"><Download size={21}/></span><div><h3>下载安装包</h3><p>适合离线安装，将安装包保存到本机后执行：</p><a className="button primary" href={appUrl('/nikowenku-archive-0.1.1.tgz')} download><Download size={15}/>下载 .tgz 安装包</a><code>npm install -g --offline ./nikowenku-archive-0.1.1.tgz</code></div></section>
       <section><span className="install-option-icon"><Terminal size={21}/></span><div><h3>使用 npm 安装</h3><p>在终端执行下方命令，从 npm 安装独立 CLI。</p><button className="install-copy" onClick={async () => setCopied(await onCopy())}><code>npm install -g nikowenku-archive</code>{copied ? <Check size={16}/> : <Copy size={16}/>}<span className="visually-hidden">复制 npm 安装命令</span></button>{copied !== null && <p className="install-copy-status" role="status">{copied ? '安装命令已复制' : '未能自动复制，请手动选择上方命令。'}</p>}</div></section>
     </div>
-    <details className="install-skill"><summary><Sparkles size={15} aria-hidden="true"/>AI Skill 与更多工具</summary><p>Skill 同时包含命令说明书，可供 AI 阅读和调用。</p><a className="text-link" href={appUrl('/nikowenku-archive-skill.md')} download><Download size={15}/>下载 Codex Skill</a><a className="text-link" href={appUrl('/nico-cli-0.1.0.tgz')} download><Download size={15}/>下载 nico-cli 工具箱</a></details>
+    <details className="install-skill"><summary><Sparkles size={15} aria-hidden="true"/>AI Skill 与更多工具</summary><p>Skill 同时包含命令说明书，可供 AI 阅读和调用。</p><a className="text-link" href={appUrl('/nikowenku-archive-skill.md')} download><Download size={15}/>下载 Codex Skill</a><a className="text-link" href={appUrl('/niko-cli-0.1.0.tgz')} download><Download size={15}/>下载 niko-cli 工具箱</a></details>
   </Modal>;
 }
 
