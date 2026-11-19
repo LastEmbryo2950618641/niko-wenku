@@ -61,6 +61,7 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
   const adminAuth = readOnly ? null : await (await import('./admin-auth.mjs')).createAdminAuth(adminAuthFile, captchaService);
   const library = createLibrary(libraryRoot, { indexPath: join(stateDir || worker?.stateDir || join(dirname(resolve(libraryRoot)), '.state'), 'library-index.json') });
   const workerControl = !readOnly && worker ? (await import('./worker-control.mjs')).createWorkerController({ ...worker, libraryRoot }) : null;
+  const ciweimaoControl = !readOnly && worker ? (await import('./ciweimao-control.mjs')).createCiweimaoController({ ...worker, libraryRoot }) : null;
   const publicRoot = readOnly ? null : resolve(webRoot);
   if (readOnly) await library.scan({ waitForRefresh: true });
   const vite = dev ? await (await import('vite')).createServer({
@@ -134,6 +135,19 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
         res.setHeader('ETag', etag);
         if (String(req.headers['if-none-match'] || '').split(',').some(value => value.trim().replace(/^W\//, '') === etag || value.trim() === '*')) { res.writeHead(304, { 'Cache-Control': 'no-cache' }); return res.end(); }
         return json(res, 200, { ...result, libraryPath: publicUrl ? 'library/' : catalog.libraryPath, partial: result.total > result.books.length });
+      }
+      if (url.pathname.startsWith('/api/worker/ciweimao/')) {
+        if (!ciweimaoControl) throw new ArchiveError('此实例没有配置刺猬猫同步任务', 503);
+        const action = url.pathname.slice('/api/worker/ciweimao/'.length);
+        if (action === 'status' && req.method === 'GET') return json(res, 200, await ciweimaoControl.status());
+        if (action === 'search' && req.method === 'GET') return json(res, 200, await ciweimaoControl.search(url.searchParams.get('q')));
+        if (['start', 'stop', 'add', 'remove'].includes(action) && req.method === 'POST') {
+          requireSameOrigin();
+          const payload = await readJson(req, 2048);
+          if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new ArchiveError('请求必须为 JSON 对象');
+          return json(res, 200, await ciweimaoControl.control(action, payload));
+        }
+        throw new ArchiveError('接口不存在', 404);
       }
       if (url.pathname === '/api/worker/status' && req.method === 'GET') return json(res, 200, workerControl ? await workerControl.status() : { available: false, running: false, status: 'unavailable' });
       if (['/api/worker/start', '/api/worker/stop'].includes(url.pathname) && req.method === 'POST') {
