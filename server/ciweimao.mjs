@@ -3,6 +3,7 @@ import { createDecipheriv } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { load } from 'cheerio';
 import { createNetwork } from './network.mjs';
+import { createCiweimaoCookieStore } from './ciweimao-auth.mjs';
 
 export const CIWEIMAO_CATEGORY = '刺猬猫免费章节';
 const WEB = 'https://www.ciweimao.com', WAP = 'https://wap.ciweimao.com';
@@ -99,8 +100,9 @@ export function cleanCiweimaoContent(html) {
   return lines.join('\n\n');
 }
 
-export async function createCiweimaoClient({ signal, delayMs = 1500, fetchImpl = fetch, proxy = 'auto' } = {}) {
+export async function createCiweimaoClient({ signal, delayMs = 1500, fetchImpl = fetch, proxy = 'auto', cookieFile } = {}) {
   const network = await createNetwork({ proxy });
+  const cookieStore = cookieFile ? await createCiweimaoCookieStore(cookieFile) : null;
   const cookies = new Map();
   let lastRequest = 0, requestGate = Promise.resolve(), verificationPage = null, checkedListGate = false;
   function waitForRequest() {
@@ -117,12 +119,13 @@ export async function createCiweimaoClient({ signal, delayMs = 1500, fetchImpl =
     for (let attempt = 0; attempt < 3; attempt++) {
       if (!hosts.has(url.hostname) || url.protocol !== 'https:' || url.port) throw new CiweimaoError('官网跳转到不受支持的地址');
       await waitForRequest();
+      if (cookieStore) await cookieStore.refresh();
       let response;
       const timeout = AbortSignal.timeout(30000), combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
       try {
         response = await fetchImpl(url, { method, signal: combined, dispatcher: network.dispatcher, redirect: 'manual',
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36',
-            ...(cookies.has(url.hostname) ? { Cookie: [...cookies.get(url.hostname).values()].join('; ') } : {}),
+            ...(cookieStore ? (cookieStore.header(url.hostname, url.pathname) ? { Cookie: cookieStore.header(url.hostname, url.pathname) } : {}) : cookies.has(url.hostname) ? { Cookie: [...cookies.get(url.hostname).values()].join('; ') } : {}),
             ...(data ? { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' } : {}),
             ...(referer ? { Referer: referer } : {}) },
           ...(data ? { body: new URLSearchParams(data) } : {}) });
@@ -135,6 +138,7 @@ export async function createCiweimaoClient({ signal, delayMs = 1500, fetchImpl =
         const pair = cookie.split(';')[0], name = pair.split('=')[0];
         if (!cookies.has(url.hostname)) cookies.set(url.hostname, new Map());
         cookies.get(url.hostname).set(name, pair);
+        if (cookieStore) await cookieStore.setFromHeader(url.hostname, cookie);
       }
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         await response.body?.cancel();

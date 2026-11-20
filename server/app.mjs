@@ -148,6 +148,19 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
       if (url.pathname.startsWith('/api/worker/ciweimao/')) {
         if (!ciweimaoControl) throw new ArchiveError('此实例没有配置刺猬猫同步任务', 503);
         const action = url.pathname.slice('/api/worker/ciweimao/'.length);
+        if (action === 'auth' && req.method === 'GET') return json(res, 200, await ciweimaoControl.authStatus());
+        if (action === 'auth/import' && req.method === 'POST') {
+          requireSameOrigin();
+          const payload = await readJson(req, 1024 * 1024);
+          if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new ArchiveError('请求必须为 JSON 对象');
+          return json(res, 200, await ciweimaoControl.importAuth(payload));
+        }
+        if (action === 'auth/clear' && req.method === 'POST') {
+          requireSameOrigin();
+          const payload = await readJson(req, 1024);
+          if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length) throw new ArchiveError('此接口不接受自定义参数');
+          return json(res, 200, await ciweimaoControl.clearAuth());
+        }
         if (action === 'status' && req.method === 'GET') return json(res, 200, await ciweimaoControl.status());
         if (action === 'search' && req.method === 'GET') return json(res, 200, await ciweimaoControl.search(url.searchParams.get('q')));
         if (['start', 'stop', 'add', 'remove'].includes(action) && req.method === 'POST') {

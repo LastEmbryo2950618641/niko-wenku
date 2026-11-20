@@ -84,7 +84,7 @@ cp ./nikowenku-archive-skill.md .agents/skills/nikowenku-archive/SKILL.md
 
 关闭网页不会停止进程；“停止同步”只停止刺猬猫任务。移出队列保留已上架书籍，并加入排除列表，自动扫描不会再将其加入；手动添加相同 ID 可恢复。原有来源的面板、队列、扫描断点和启停互不影响。遇到登录、验证码或限流时，刺猬猫任务停止并保存进度。
 
-官网当前公开书库约 7,415 页，并在第 20 页起要求人工验证；程序遵守这一边界，不通过直接请求绕过翻页验证。达到边界时会显示原因并保留断点，因此未完成官网验证的运行不能宣称已扫描整站。网页中完成验证不会自动转移浏览器会话到后台，本版本没有登录或导入浏览器 Cookie 的功能。
+官网当前公开书库约 7,415 页，并在第 20 页起要求人工验证；程序遵守这一边界，不通过直接请求绕过翻页验证。达到边界时会显示原因并保留断点。管理员登录后，在刺猬猫面板的“登录状态”区域粘贴浏览器 Cookie Header，或选择浏览器导出的 Cookie JSON/storageState 文件，即可将已完成人工验证的登录状态保存给后台任务使用。Cookie 只写入 `${ARCHIVE_STATE_DIR}/ciweimao/auth.json`（默认 `.state/ciweimao/auth.json`），权限限制为服务用户；状态接口只返回域名、数量和更新时间，不返回 Cookie 原文。登录状态失效时任务仍会暂停并保留进度，需要重新导入。
 
 此功能由 `ciweimao-download` Skill 的免费阅读流程移植而来，使用项目已有 Node.js 环境，无需安装 Python。同步缓存、队列和日志位于 `${ARCHIVE_STATE_DIR}/ciweimao/`，默认 `.state/ciweimao/`，正文发布到项目已有的 `ARCHIVE_LIBRARY`。站点变化可能需要更新适配器；正文插图保留为链接。
 
@@ -98,7 +98,7 @@ node scripts/sync-ciweimao.mjs --background
 node scripts/sync-ciweimao.mjs --stop
 ```
 
-`--once` 扫描下一页，并完成当前可运行的一批首次下载/更新后退出。自定义数据位置时同时传入 `--state-dir <刺猬猫独立状态目录>` 与 `--library <书库目录>`。管理 API 位于 `/api/worker/ciweimao/`，不接受任意命令或本机文件路径。
+`--once` 扫描下一页，并完成当前可运行的一批首次下载/更新后退出。自定义数据位置时同时传入 `--state-dir <刺猬猫独立状态目录>` 与 `--library <书库目录>`。管理 API 位于 `/api/worker/ciweimao/`，不接受任意命令或本机文件路径；`GET .../auth` 只返回脱敏状态，`POST .../auth/import` 和 `POST .../auth/clear` 仅限管理员同源请求。不要把真实 Cookie、密码或验证码发到聊天、提交到 Git 或写入前端构建产物。
 
 ## 放入一本书，直接上架
 

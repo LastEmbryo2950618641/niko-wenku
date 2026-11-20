@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { loadCiweimaoQueue, optionalJson } from './ciweimao-worker.mjs';
 import { writeJsonAtomic } from './download-queue.mjs';
 import { createCiweimaoClient, ciweimaoId } from './ciweimao.mjs';
+import { createCiweimaoCookieStore } from './ciweimao-auth.mjs';
 import { ArchiveError } from './library.mjs';
 
 const exec = promisify(execFile);
@@ -15,6 +16,7 @@ const count = value => Number.isFinite(value) ? Math.max(0, value) : 0;
 export function createCiweimaoController({ stateDir, libraryRoot }) {
   stateDir = join(resolve(stateDir), 'ciweimao'); libraryRoot = resolve(libraryRoot);
   let commands = Promise.resolve(), searching = false;
+  const cookieFile = join(stateDir, 'auth.json');
   async function status() {
     const [state, lock, queue, stop] = await Promise.all([optionalJson(join(stateDir, 'worker-state.json')), optionalJson(join(stateDir, 'worker.lock')), loadCiweimaoQueue(stateDir), optionalJson(join(stateDir, 'worker.stop'))]);
     const running = Boolean(lock && alive(lock.pid)), stopping = running && stop?.token === lock.token;
@@ -66,8 +68,11 @@ export function createCiweimaoController({ stateDir, libraryRoot }) {
     async search(keyword) {
       if (searching) throw new ArchiveError('正在搜索，请稍后再试', 429);
       searching = true; let client;
-      try { client = await createCiweimaoClient(); return { books: await client.search(keyword) }; }
+      try { client = await createCiweimaoClient({ cookieFile }); return { books: await client.search(keyword) }; }
       finally { searching = false; await client?.close(); }
-    }
+    },
+    async authStatus() { return (await createCiweimaoCookieStore(cookieFile)).status(); },
+    async importAuth(payload) { const store = await createCiweimaoCookieStore(cookieFile); return store.import(payload); },
+    async clearAuth() { return (await createCiweimaoCookieStore(cookieFile)).clear(); }
   };
 }

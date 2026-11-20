@@ -199,7 +199,7 @@ export async function runCiweimaoWorker({ stateDir, libraryRoot, once = false, s
       await storeRecord({ ...record, published: record.status === 'synced' });
     }
     await save();
-    client = await createClient({ signal: abort.signal });
+    client = await createClient({ signal: abort.signal, cookieFile: join(stateDir, 'auth.json') });
     do {
       abort.signal.throwIfAborted();
       queue = await loadCiweimaoQueue(stateDir);
