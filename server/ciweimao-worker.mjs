@@ -1,10 +1,11 @@
-import { readFile, mkdir, writeFile, rename, readdir } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { readFile, mkdir, writeFile, rename, readdir, realpath } from 'node:fs/promises';
+import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { readJsonFile, writeJsonAtomic, acquireWorkerLock } from './download-queue.mjs';
 import { publishBundle } from './library.mjs';
 import { createCiweimaoClient, ciweimaoId, CIWEIMAO_CATEGORY } from './ciweimao.mjs';
+import { coverFailure } from './cover.mjs';
 
 export async function optionalJson(path) {
   try { return await readJsonFile(path, 16 * 1024 * 1024); }
@@ -27,7 +28,22 @@ async function saveText(path, text) {
   await rename(temp, path);
 }
 
-export const catalogFingerprint = book => sha256(JSON.stringify({ title: book.title, author: book.author, description: book.description, status: book.status, chapters: book.chapters }));
+export const catalogFingerprint = book => sha256(JSON.stringify({ title: book.title, author: book.author, description: book.description, status: book.status, coverUrl: book.coverUrl || null, chapters: book.chapters }));
+
+async function readPublishedCover(directory, manifest) {
+  const name = manifest?.files?.cover;
+  if (typeof name !== 'string' || !name) return null;
+  const path = resolve(directory, name), rel = relative(directory, path);
+  if (!rel || isAbsolute(rel) || rel === '..' || rel.startsWith('..' + sep)) return null;
+  try {
+    const [root, file] = await Promise.all([realpath(directory), realpath(path)]);
+    const actual = relative(root, file);
+    if (!actual || isAbsolute(actual) || actual === '..' || actual.startsWith('..' + sep)) return null;
+    const buffer = await readFile(file);
+    return buffer.length ? { name, buffer } : null;
+  } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+}
+
 export async function syncCiweimaoBook({ id, libraryRoot, stateDir, client, signal, catalog, onProgress = async () => {} }) {
   id = ciweimaoId(id);
   const book = catalog || await client.catalog(id), cacheDir = join(stateDir, 'cache', id);
@@ -77,18 +93,38 @@ export async function syncCiweimaoBook({ id, libraryRoot, stateDir, client, sign
   const destination = join(libraryRoot, `ciweimao-${id}`, 'book.json');
   const oldBook = await optionalJson(destination);
   if (oldBook && (oldBook.source?.name !== '刺猬猫' || String(oldBook.source?.bookId) !== id)) throw new Error('相同书籍 ID 已被其他来源占用，未替换');
-  if (oldBook?.integrity?.sha256 === sha256(body) && oldBook.category === CIWEIMAO_CATEGORY && oldBook.source?.catalogFingerprint === catalogFingerprint(book)) {
+  const coverUrl = book.coverUrl || oldBook?.source?.coverUrl;
+  const fingerprint = catalogFingerprint({ ...book, coverUrl: coverUrl || null });
+  const previousCover = await readPublishedCover(join(libraryRoot, `ciweimao-${id}`), oldBook);
+  const coverNeedsSync = !!coverUrl && (!previousCover || oldBook?.source?.coverUrl !== coverUrl);
+  if (oldBook?.integrity?.sha256 === sha256(body) && oldBook.category === CIWEIMAO_CATEGORY && oldBook.source?.catalogFingerprint === fingerprint && !coverNeedsSync) {
     // A damaged/missing published file must be repaired even if its manifest hash matches.
     try { if (sha256(await readFile(join(libraryRoot, `ciweimao-${id}`, 'content.txt'))) === sha256(body)) return { ...progress, status: 'synced', unchanged: true }; } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
+  let coverBuffer = previousCover?.buffer, coverName = previousCover?.name, coverInfo = oldBook?.coverDownload;
+  if (coverUrl && coverNeedsSync) {
+    await onProgress({ ...progress, phase: 'cover' });
+    try {
+      const image = await client.cover(coverUrl, book.url);
+      signal?.throwIfAborted();
+      coverBuffer = image.buffer; coverName = image.name;
+      coverInfo = { status: 'downloaded', bytes: image.bytes, checkedAt: new Date().toISOString() };
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      coverInfo = { ...coverFailure(error), checkedAt: new Date().toISOString() };
+    }
+  }
   await onProgress({ ...progress, phase: 'publishing' });
+  const files = { text: 'content.txt', ...(coverBuffer && coverName ? { cover: coverName } : {}) };
+  const buffers = { 'content.txt': body, ...(coverBuffer && coverName ? { [coverName]: coverBuffer } : {}) };
   await publishBundle(libraryRoot, {
     id: `ciweimao-${id}`, title: book.title, author: book.author, description: book.description,
     category: CIWEIMAO_CATEGORY, tags: ['刺猬猫', '免费章节'], status: book.status,
-    language: 'zh-Hans', encoding: 'utf-8', updatedAt: new Date().toISOString(), files: { text: 'content.txt' },
-    source: { name: '刺猬猫', bookId: id, url: book.url, freeOnly: true, catalogFingerprint: catalogFingerprint(book), freeChapterCount: contents.length, skippedChapterCount: progress.skipped, totalChapterCount: book.chapters.length }
-  }, { 'content.txt': body }, { replaceExisting: !!oldBook });
-  return { ...progress, status: 'synced', unchanged: false };
+    language: 'zh-Hans', encoding: 'utf-8', updatedAt: new Date().toISOString(), files,
+    ...(coverInfo ? { coverDownload: coverInfo } : {}),
+    source: { name: '刺猬猫', bookId: id, url: book.url, ...(coverUrl ? { coverUrl } : {}), freeOnly: true, catalogFingerprint: fingerprint, freeChapterCount: contents.length, skippedChapterCount: progress.skipped, totalChapterCount: book.chapters.length }
+  }, buffers, { replaceExisting: !!oldBook });
+  return { ...progress, status: 'synced', unchanged: false, ...(coverInfo ? { cover: coverInfo } : {}) };
 }
 
 export async function runCiweimaoWorker({ stateDir, libraryRoot, once = false, signal: externalSignal, createClient = createCiweimaoClient, pollMs = 2000, now = Date.now } = {}) {
@@ -159,7 +195,10 @@ export async function runCiweimaoWorker({ stateDir, libraryRoot, once = false, s
         state.update.checked++;
         const old = await optionalJson(join(libraryRoot, `ciweimao-${id}`, 'book.json'));
         let intact = false;
-        if (old?.source?.catalogFingerprint === catalogFingerprint(catalog)) {
+        const coverUrl = catalog.coverUrl || old?.source?.coverUrl;
+        const existingCover = await readPublishedCover(join(libraryRoot, `ciweimao-${id}`), old);
+        const coverNeedsSync = !!coverUrl && (!existingCover || old?.source?.coverUrl !== coverUrl);
+        if (old?.source?.catalogFingerprint === catalogFingerprint({ ...catalog, coverUrl: coverUrl || null }) && !coverNeedsSync) {
           try { intact = old.integrity?.sha256 === sha256(await readFile(join(libraryRoot, `ciweimao-${id}`, 'content.txt'))); } catch (error) { if (error.code !== 'ENOENT') throw error; }
         }
         if (intact) {

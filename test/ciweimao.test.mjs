@@ -30,14 +30,72 @@ function source() {
 }
 
 test('ciweimao parser keeps free chapters after paid chapters and decodes the Skill test vector', () => {
-  const html = '<div class="book-info"><h1 class="book">书名</h1><p class="author">作者 著 / 分类</p></div><div class="catalogue"><h2>卷一</h2><ul class="catalogue-list"><li><a href="/chapter/11">开端</a></li><li><a href="/chapter/12"><i class="icon-lock"></i>收费</a></li><li><a href="/chapter/13">番外</a></li></ul></div>';
+  const html = '<meta property="og:image" content="https://e2.kuangxiangit.com/cover.jpg"><div class="book-info"><h1 class="book">书名</h1><p class="author">作者 著 / 分类</p><img class="lazyload" src="/resources/images/cover.jpg" data-original="https://e1.kuangxiangit.com/cover.jpg"></div><div class="catalogue"><h2>卷一</h2><ul class="catalogue-list"><li><a href="/chapter/11">开端</a></li><li><a href="/chapter/12"><i class="icon-lock"></i>收费</a></li><li><a href="/chapter/13">番外</a></li></ul></div>';
   assert.deepEqual(parseCiweimaoCatalog(html, '100').chapters.map(chapter => chapter.free), [true, false, true]);
+  assert.equal(parseCiweimaoCatalog(html, '100').coverUrl, 'https://e1.kuangxiangit.com/cover.jpg');
+  assert.equal(parseCiweimaoCatalog(html.replace('https://e1.kuangxiangit.com/cover.jpg', 'https://example.org/cover.jpg'), '100').coverUrl, 'https://e2.kuangxiangit.com/cover.jpg');
   const ciphertext = 'QUFBQUFBQUFBQUFBQUFBQUpItDAn1k/+Uxdfchw5FRcTOFAtKSEai4vy1kHTnyG6DZNi6Uk6GsYVg4CLelkPBwiZoj+DWno81DvsWPIdj0tMkeekf3hMJCmNRbwfXMchbkiCWSQhyfbyTVW9aKXZ0KBFY14iJbQBfbvs4HVOyjo=';
   assert.equal(cleanCiweimaoContent(decodeCiweimaoContent(ciphertext, ['MDEyMzQ1Njc4OWFiY2RlZg==', 'YWJjZGVmMDEyMzQ1Njc4OQ==', 'ZmVkY2JhOTg3NjU0MzIxMA=='], 'Ay')), '测试正文');
   assert.equal(ciweimaoId('https://www.ciweimao.com/book/100'), '100');
   assert.throws(() => ciweimaoId('https://example.org/book/100'));
   assert.throws(() => cleanCiweimaoContent('<html>请登录</html>'));
   assert.deepEqual(parseCiweimaoSearch('<div class="rank-book-list"></div>'), []);
+});
+
+test('ciweimao sync stores a local cover and retries a failed cover without downloading cached chapters again', async t => {
+  const f = await fixture(t), client = source(), png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=', 'base64');
+  client.book.coverUrl = 'https://e1.kuangxiangit.com/cover.jpg';
+  let coverAttempts = 0;
+  client.cover = async () => {
+    coverAttempts++;
+    if (coverAttempts === 1) throw new Error('cover server offline');
+    return { buffer: png, name: 'cover.png', bytes: png.length };
+  };
+
+  const first = await syncCiweimaoBook({ ...f, id: '100', client });
+  const directory = join(f.libraryRoot, 'ciweimao-100');
+  const firstManifest = JSON.parse(await readFile(join(directory, 'book.json'), 'utf8'));
+  assert.equal(first.cover.status, 'failed');
+  assert.equal(firstManifest.source.coverUrl, client.book.coverUrl);
+  assert.equal(firstManifest.coverDownload.status, 'failed');
+  assert.equal(firstManifest.files.cover, undefined);
+  assert.deepEqual(client.requests, ['11', '13']);
+
+  client.requests.length = 0;
+  const second = await syncCiweimaoBook({ ...f, id: '100', client });
+  const secondManifest = JSON.parse(await readFile(join(directory, 'book.json'), 'utf8'));
+  assert.equal(second.cover.status, 'downloaded');
+  assert.equal(coverAttempts, 2);
+  assert.deepEqual(client.requests, []);
+  assert.equal(secondManifest.files.cover, 'cover.png');
+  assert.deepEqual(await readFile(join(directory, 'cover.png')), png);
+});
+
+test('periodic ciweimao updates retry a missing cover after the first cover request fails', async t => {
+  const f = await fixture(t), client = source(), png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=', 'base64');
+  client.book.coverUrl = 'https://e1.kuangxiangit.com/cover.jpg';
+  let coverAttempts = 0;
+  client.cover = async () => {
+    coverAttempts++;
+    if (coverAttempts === 1) throw new Error('cover server offline');
+    return { buffer: png, name: 'cover.png', bytes: png.length };
+  };
+  await writeFile(join(f.stateDir, 'queue.json'), JSON.stringify({ version: 1, books: ['100'], autoDiscover: false }));
+  const run = () => runCiweimaoWorker({ ...f, once: true, createClient: async () => client });
+
+  await run();
+  assert.equal(coverAttempts, 1);
+  const recordPath = join(f.stateDir, 'books', '100.json');
+  const record = JSON.parse(await readFile(recordPath, 'utf8'));
+  record.nextSyncAt = null;
+  await writeFile(recordPath, JSON.stringify(record));
+  client.requests.length = 0;
+
+  await run();
+  const manifest = JSON.parse(await readFile(join(f.libraryRoot, 'ciweimao-100', 'book.json'), 'utf8'));
+  assert.equal(coverAttempts, 2);
+  assert.deepEqual(client.requests, []);
+  assert.equal(manifest.files.cover, 'cover.png');
 });
 
 test('paid chapters make no request and access restrictions stop the client', async () => {

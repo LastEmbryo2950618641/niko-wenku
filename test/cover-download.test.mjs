@@ -5,6 +5,7 @@ import { mkdtemp, readFile, writeFile, stat, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { downloadFullBook } from '../server/downloader.mjs';
+import { downloadCoverImage } from '../server/cover.mjs';
 import { createLibrary } from '../server/library.mjs';
 import { backfillBookCover } from '../server/cover-backfill.mjs';
 import { runDownloadWorker } from '../server/download-worker.mjs';
@@ -41,6 +42,17 @@ test('a whole book publishes its actual cover format locally and gates every ima
   assert.equal(gates, 3);
   assert.deepEqual(f.requests.filter(r => r.url !== '/full.txt').map(r => r.cookie), ['', '']);
   assert.equal(await readFile(join(f.root, 'covered', 'content.txt'), 'utf8'), body);
+});
+
+test('cover download can reject redirects outside the configured source CDN domains', async () => {
+  let requests = 0;
+  await assert.rejects(downloadCoverImage('https://e1.kuangxiangit.com/cover.jpg', {
+    allowedHosts: ['kuangxiangit.com'], beforeRequest: async () => {}, fetchImpl: async () => {
+      requests++;
+      return new Response(null, { status: 302, headers: { location: 'http://127.0.0.1/private' } });
+    }
+  }), /封面地址不在允许的域名内/);
+  assert.equal(requests, 1);
 });
 
 test('an HTML response posing as an image leaves the full text readable with no broken cover reference', async t => {

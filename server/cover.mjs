@@ -11,10 +11,13 @@ function imageExtension(buffer) {
 
 /** Fetch only a public image. Account cookies are never sent to image hosts. */
 export async function downloadCoverImage(inputUrl, options = {}) {
+  const fetcher = options.fetchImpl || fetch;
+  const allowedHosts = options.allowedHosts;
   let url = new URL(inputUrl);
   const maxBytes = options.maxCoverBytes ?? 8 * 1024 * 1024;
   for (let redirect = 0; redirect <= 5; redirect++) {
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new ArchiveError('封面地址必须为不含密码的 HTTP(S) 地址');
+    if (allowedHosts && !allowedHosts.some(host => url.hostname === host || url.hostname.endsWith('.' + host))) throw new ArchiveError('封面地址不在允许的域名内');
     if (options.beforeRequest) await options.beforeRequest();
     else {
       const min = options.minDelayMs ?? 3000, max = options.maxDelayMs ?? 8000;
@@ -26,7 +29,7 @@ export async function downloadCoverImage(inputUrl, options = {}) {
       const referer = new URL(options.referer);
       if (['http:', 'https:'].includes(referer.protocol) && !referer.username && !referer.password) headers.Referer = referer.href;
     }
-    const response = await fetch(url, { headers, dispatcher: options.dispatcher, redirect: 'manual', signal: AbortSignal.any([AbortSignal.timeout(options.coverTimeoutMs ?? 20000), ...(options.signal ? [options.signal] : [])]) });
+    const response = await fetcher(url, { headers, dispatcher: options.dispatcher, redirect: 'manual', signal: AbortSignal.any([AbortSignal.timeout(options.coverTimeoutMs ?? 20000), ...(options.signal ? [options.signal] : [])]) });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get('location');
       await response.body?.cancel();

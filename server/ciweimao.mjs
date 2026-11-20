@@ -4,6 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { load } from 'cheerio';
 import { createNetwork } from './network.mjs';
 import { createCiweimaoCookieStore } from './ciweimao-auth.mjs';
+import { downloadCoverImage } from './cover.mjs';
 
 export const CIWEIMAO_CATEGORY = '刺猬猫免费章节';
 const WEB = 'https://www.ciweimao.com', WAP = 'https://wap.ciweimao.com';
@@ -53,6 +54,17 @@ export function parseCiweimaoBookList(html, page) {
 export function parseCiweimaoCatalog(html, id) {
   const $ = load(html), title = $('.book-info h1.book').text().trim(), catalog = $('.catalogue');
   if (!title || !catalog.length) throw new CiweimaoError('作品不存在、已下架或目录结构变化');
+  const image = $('.book-info img').first();
+  const coverCandidates = [image.attr('data-original'), $('meta[property="og:image"]').attr('content'), image.attr('src')];
+  const coverUrl = coverCandidates.map(value => {
+    if (!value) return null;
+    try {
+      const url = new URL(value, WAP);
+      const hostAllowed = hosts.has(url.hostname) || url.hostname.endsWith('.kuangxiangit.com') || url.hostname === 'kuangxiangit.com';
+      if (url.protocol !== 'https:' || url.port || url.username || url.password || !hostAllowed || /\/resources\/images\/(?:cover|transparent|404)\./i.test(url.pathname)) return null;
+      return url.href;
+    } catch { return null; }
+  }).find(Boolean);
   const chapters = [], seen = new Set();
   catalog.find('ul.catalogue-list').each((_, el) => {
     const volume = $(el).prevAll('h2').first().text().trim();
@@ -68,7 +80,7 @@ export function parseCiweimaoCatalog(html, id) {
     id, title, author: $('.book-info .author').text().trim().split(' 著')[0],
     description: $('.book-desc .desc-cnt').text().trim(),
     status: /已完结|已完結/.test($('.book-info .intro').text()) ? '已完结（免费章节）' : '连载中（免费章节）',
-    url: `${WEB}/book/${id}`, chapters
+    url: `${WEB}/book/${id}`, ...(coverUrl ? { coverUrl } : {}), chapters
   };
 }
 export function decodeCiweimaoContent(content, keys, accessKey) {
@@ -193,6 +205,9 @@ export async function createCiweimaoClient({ signal, delayMs = 1500, fetchImpl =
       return parseCiweimaoSearch(await request(`${WEB}/get-search-book-list/0-0-0-0-0-0/${encodeURIComponent('全部')}/${encodeURIComponent(keyword.trim())}/1`));
     },
     async catalog(id) { return parseCiweimaoCatalog(await request(`${WAP}/book/${ciweimaoId(id)}`), id); },
+    async cover(url, referer) {
+      return downloadCoverImage(url, { signal, dispatcher: network.dispatcher, fetchImpl, referer, beforeRequest: waitForRequest, allowedHosts: ['ciweimao.com', 'kuangxiangit.com'] });
+    },
     async content(bookId, chapter) {
       if (!chapter.free) throw new CiweimaoError('收费章节已跳过', 'PAID');
       const html = await request(`${WAP}/chapter/${chapter.id}`);
