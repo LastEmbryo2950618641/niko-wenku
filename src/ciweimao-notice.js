@@ -2,7 +2,7 @@ export function ciweimaoAccessNotice(state) {
   if (state?.status !== 'access_required') return null;
 
   const reason = state.scan?.message || state.message || '';
-  if (reason.includes('书库继续翻页需要官网人工验证')) {
+  if (reason.includes('书库继续翻页需要官网人工验证') || reason.includes('booklistCode')) {
     const page = state.scan?.nextPage || 20;
     return {
       title: '需要完成书库翻页验证',

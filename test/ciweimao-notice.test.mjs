@@ -17,6 +17,18 @@ test('book-list verification pause shows its page checkpoint and next steps', ()
   assert.equal(notice.linkText, '打开刺猬猫第 20 页');
 });
 
+test('missing booklistCode notice links directly to the page that needs verification', () => {
+  const message = '缺少书库翻页验证 Cookie booklistCode，请在官网完成翻页验证后重新导入，扫描断点已保存';
+  const notice = ciweimaoAccessNotice({
+    status: 'access_required',
+    message,
+    scan: { nextPage: 23, message }
+  });
+
+  assert.equal(notice.url, 'https://www.ciweimao.com/book_list/0-0-0-0-0-0/quanbu/23');
+  assert.equal(notice.linkText, '打开刺猬猫第 23 页');
+});
+
 test('other access restrictions keep their server message in a visible notice', () => {
   const notice = ciweimaoAccessNotice({
     status: 'access_required',
