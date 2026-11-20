@@ -86,7 +86,7 @@ systemctl --user restart wenku-archive
 
 服务停止时先请求下载器安全停止，扫描断点和已完成文件保存在数据目录。再次登录任务页启动后继续。发布前记录当前 Git commit，回滚时切回该 commit、重新构建并重启；无需删除运行数据。
 
-组合站点的 Nginx 已直接提供静态前端时，只更新 `/srv/niko-archive/niko-wenku/dist/` 即可发布页面，**无需重启主后端或任务下载器**。只有主后端代码升级才需要上述 restart；只读备用有自己的发布目录和服务，不能一起停止或覆盖。
+组合站点一次更新包含两处，缺一不可。静态页发布到 `/srv/niko-archive`，书库页面在 `niko-wenku/dist/`。主后端把 `/home/liuqi/apps/wenku-archive` 快进到同一次提交，测试通过后执行 `systemctl --user restart wenku-archive`，新接口才会进入正在运行的进程。不要只更新静态文件就结束。只读备用有自己的发布目录和服务：健康就保持原样，不升级、不重启、不改配置；不能和主后端一起停止或覆盖。
 
 ## CLI 公开 API 主备冗余
 
