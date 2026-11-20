@@ -41,6 +41,23 @@ export function useProgress() {
   }, []);
   return progress;
 }
+export function saveReadingProgress(id, entry) {
+  return api('/api/reading-progress', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Archive-Client': 'local-web' }, body: JSON.stringify({ bookId: id, chapter: entry.chapter, title: entry.title || '', scroll: entry.scroll || 0, visitedAt: entry.visitedAt }) });
+}
+export async function syncReadingProgress() {
+  const remote = await api('/api/reading-progress');
+  const server = remote.progress || {};
+  const local = readStore('progress', {});
+  let changed = false;
+  for (const [id, entry] of Object.entries(server)) {
+    if (!local[id] || (entry.visitedAt || 0) >= (local[id].visitedAt || 0)) {
+      local[id] = entry;
+      changed = true;
+    }
+  }
+  if (changed) writeStore('progress', local);
+  await Promise.all(Object.entries(local).filter(([id, entry]) => !server[id] || (entry.visitedAt || 0) > (server[id].visitedAt || 0)).slice(0, 500).map(([id, entry]) => saveReadingProgress(id, entry).catch(() => {})));
+}
 export function navigate(path) { window.location.hash = path; }
 export function useRoute() {
   const getRoute = () => {

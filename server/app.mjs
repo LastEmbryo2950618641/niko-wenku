@@ -60,6 +60,7 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
   }
   const adminAuth = readOnly ? null : await (await import('./admin-auth.mjs')).createAdminAuth(adminAuthFile, captchaService);
   const library = createLibrary(libraryRoot, { indexPath: join(stateDir || worker?.stateDir || join(dirname(resolve(libraryRoot)), '.state'), 'library-index.json') });
+  const readingProgress = readOnly ? null : (await import('./reading-progress.mjs')).createReadingProgress(stateDir || worker?.stateDir || join(dirname(resolve(libraryRoot)), '.state'));
   const workerControl = !readOnly && worker ? (await import('./worker-control.mjs')).createWorkerController({ ...worker, libraryRoot }) : null;
   const ciweimaoControl = !readOnly && worker ? (await import('./ciweimao-control.mjs')).createCiweimaoController({ ...worker, libraryRoot }) : null;
   const publicRoot = readOnly ? null : resolve(webRoot);
@@ -110,6 +111,14 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
         requireSameOrigin();
         adminAuth?.logout(req, res, origin.startsWith('https:'));
         return json(res, 200, authState(null));
+      }
+      if (url.pathname === '/api/reading-progress' && (req.method === 'GET' || req.method === 'POST')) {
+        if (!readingProgress) throw new ArchiveError('接口不存在', 404);
+        if (!currentSession) throw new ArchiveError('请先登录后再保存阅读记录', 401);
+        if (req.method === 'GET') return json(res, 200, { progress: readingProgress.list(currentSession.username) });
+        requireSameOrigin();
+        const saved = readingProgress.save(currentSession.username, await readJson(req, 4096));
+        return json(res, 200, { progress: { [saved.bookId]: { chapter: saved.chapter, title: saved.title, visitedAt: saved.visitedAt, scroll: saved.scroll } } });
       }
       if (adminAuth && (url.pathname.startsWith('/api/worker/') || url.pathname === '/api/publish')) {
         if (!currentSession) throw new ArchiveError('请先登录管理账号', 401);
@@ -211,6 +220,6 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
       if (status === 500) console.error(error);
     }
   });
-  server.on('close', () => { if (vite) void vite.close(); });
+  server.on('close', () => { readingProgress?.close(); if (vite) void vite.close(); });
   return server;
 }

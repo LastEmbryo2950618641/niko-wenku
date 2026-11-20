@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { appUrl, navigate, useProgress, useRoute } from './lib';
+import { appUrl, navigate, syncReadingProgress, useProgress, useRoute } from './lib';
 import { useAdminSession } from './admin';
 import './style.css';
 import { LibraryShell } from './library-shell';
@@ -30,6 +30,7 @@ function App() {
   const catalogRequest = useRef(null);
   const catalogEtag = useRef({ key: '', value: '' });
   const progress = useProgress();
+  useEffect(() => { if (admin.authenticated) void syncReadingProgress().catch(() => {}); }, [admin.authenticated]);
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const isRecent = route.page === 'recent';
   const isCompleted = route.page === 'completed';

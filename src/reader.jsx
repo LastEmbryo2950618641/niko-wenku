@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Download, List, Minus, Moon, Plus, Search, Sun, X } from 'lucide-react';
-import { appUrl, api, bookUrl, navigate, readBook, readStore, words, writeStore } from './lib';
+import { appUrl, api, bookUrl, navigate, readBook, readStore, saveReadingProgress, words, writeStore } from './lib';
 import { readingParagraphs } from './reading-text';
 import { LaceDivider, RibbonBow } from './library-ornaments';
 
@@ -39,14 +39,18 @@ export default function Reader({ id, chapterIndex }) {
       window.scrollTo(0, scroll);
       scrollRestored.current = true;
     });
-    progress[id] = { chapter: chapterIndex, title: chapter.title, visitedAt: Date.now(), scroll };
-    writeStore('progress', progress);
+    const remember = entry => {
+      const current = readStore('progress', {});
+      current[id] = entry;
+      writeStore('progress', current);
+      void saveReadingProgress(id, entry).catch(() => {});
+    };
+    const opened = { chapter: chapterIndex, title: chapter.title, visitedAt: Date.now(), scroll };
+    remember(opened);
     let timer;
     const save = () => {
       if (!scrollRestored.current) return;
-      const current = readStore('progress', {});
-      current[id] = { chapter: chapterIndex, title: chapter.title, visitedAt: Date.now(), scroll: window.scrollY };
-      writeStore('progress', current);
+      remember({ chapter: chapterIndex, title: chapter.title, visitedAt: Date.now(), scroll: window.scrollY });
     };
     const onScroll = () => { clearTimeout(timer); timer = setTimeout(save, 250); };
     window.addEventListener('scroll', onScroll, { passive: true });
