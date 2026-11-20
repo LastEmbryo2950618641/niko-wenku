@@ -155,11 +155,11 @@ export async function createAppServer({ libraryRoot, webRoot, dev = false, worke
           if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new ArchiveError('请求必须为 JSON 对象');
           return json(res, 200, await ciweimaoControl.importAuth(payload));
         }
-        if (action === 'auth/clear' && req.method === 'POST') {
+        if (['auth/clear', 'auth/check'].includes(action) && req.method === 'POST') {
           requireSameOrigin();
           const payload = await readJson(req, 1024);
           if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length) throw new ArchiveError('此接口不接受自定义参数');
-          return json(res, 200, await ciweimaoControl.clearAuth());
+          return json(res, 200, await ciweimaoControl[action === 'auth/check' ? 'checkAuth' : 'clearAuth']());
         }
         if (action === 'status' && req.method === 'GET') return json(res, 200, await ciweimaoControl.status());
         if (action === 'search' && req.method === 'GET') return json(res, 200, await ciweimaoControl.search(url.searchParams.get('q')));

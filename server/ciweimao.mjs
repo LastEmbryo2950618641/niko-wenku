@@ -9,7 +9,7 @@ export const CIWEIMAO_CATEGORY = '刺猬猫免费章节';
 const WEB = 'https://www.ciweimao.com', WAP = 'https://wap.ciweimao.com';
 const hosts = new Set(['www.ciweimao.com', 'wap.ciweimao.com', 'ciweimao.com']);
 export class CiweimaoError extends Error {
-  constructor(message, code = 'CONTENT', status = 502) { super(message); this.code = code; this.status = status; }
+  constructor(message, code = 'CONTENT', status = 502, reason) { super(message); this.code = code; this.status = status; if (reason) this.reason = reason; }
 }
 export function ciweimaoId(value) {
   if (typeof value !== 'string' || value.length > 500) throw new CiweimaoError('请输入刺猬猫作品 ID 或官网作品链接', 'INPUT', 400);
@@ -179,7 +179,10 @@ export async function createCiweimaoClient({ signal, delayMs = 1500, fetchImpl =
         verificationPage = parseCiweimaoBookList(await request(`${WEB}/book_list/0-0-0-0-0-0/quanbu/1`), 1).verificationPage;
         checkedListGate = true;
       }
-      if (verificationPage && page >= verificationPage && !cookies.get('www.ciweimao.com')?.has('booklistCode')) throw new CiweimaoError('书库继续翻页需要官网人工验证，扫描断点已保存', 'ACCESS');
+      if (cookieStore) await cookieStore.refresh();
+      const listPath = `/book_list/0-0-0-0-0-0/quanbu/${page}`;
+      const listCookies = cookieStore ? cookieStore.header('www.ciweimao.com', listPath) : [...(cookies.get('www.ciweimao.com')?.values() || [])].join('; ');
+      if (verificationPage && page >= verificationPage && !/(?:^|;\s*)booklistCode=[^;\s]+/.test(listCookies)) throw new CiweimaoError('缺少书库翻页验证 Cookie booklistCode，请在官网完成翻页验证后重新导入，扫描断点已保存', 'ACCESS', 502, 'LIST_VERIFICATION_REQUIRED');
       const result = parseCiweimaoBookList(await request(`${WEB}/book_list/0-0-0-0-0-0/quanbu/${page}`), page);
       verificationPage = result.verificationPage;
       checkedListGate = true;

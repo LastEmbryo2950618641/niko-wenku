@@ -8,6 +8,7 @@ const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,128}$/;
 const MAX_COOKIES = 200;
 const MAX_COOKIE_VALUE = 4096;
 const MAX_FILE_BYTES = 1024 * 1024;
+const active = item => item.expires === null || item.expires > Date.now() / 1000;
 
 function domain(value) {
   const result = String(value || '').trim().toLowerCase().replace(/^\.+/, '');
@@ -70,7 +71,7 @@ export class CiweimaoCookieStore {
     try {
       const text = await readFile(this.file, { encoding: 'utf8' });
       if (Buffer.byteLength(text) > MAX_FILE_BYTES) throw new Error('cookie store too large');
-      this.entries = safeEntries(JSON.parse(text)).filter(item => !item.expires || item.expires > Date.now() / 1000);
+      this.entries = safeEntries(JSON.parse(text)).filter(active);
     } catch (error) {
       if (error.code !== 'ENOENT') this.entries = [];
     }
@@ -81,30 +82,30 @@ export class CiweimaoCookieStore {
       const text = await readFile(this.file, { encoding: 'utf8' });
       if (Buffer.byteLength(text) > MAX_FILE_BYTES) throw new Error('cookie store too large');
       const raw = JSON.parse(text);
-      this.entries = safeEntries(raw).filter(item => !item.expires || item.expires > Date.now() / 1000);
+      this.entries = safeEntries(raw).filter(active);
       this.updatedAt = raw.updatedAt || null;
     } catch (error) {
-      if (error.code === 'ENOENT') { this.entries = []; this.updatedAt = null; }
+      this.entries = []; this.updatedAt = null;
     }
     this.loaded = true;
     return this;
   }
   status() {
-    const domains = [...new Set(this.entries.map(item => item.domain))];
-    return { configured: this.entries.length > 0, domains, count: this.entries.length, updatedAt: this.updatedAt || null };
+    const entries = this.entries.filter(active), domains = [...new Set(entries.map(item => item.domain))];
+    return { configured: entries.length > 0, domains, count: entries.length, updatedAt: this.updatedAt || null };
   }
   header(hostname, requestPath = '/') {
     const host = String(hostname).toLowerCase();
-    const now = Date.now() / 1000;
     const pathValue = typeof requestPath === 'string' && requestPath.startsWith('/') ? requestPath : '/';
     return this.entries.filter(item => {
       const cookiePath = item.path || '/';
       const pathMatches = pathValue === cookiePath || pathValue.startsWith(cookiePath.endsWith('/') ? cookiePath : cookiePath + '/');
-      return (!item.expires || item.expires > now) && pathMatches && (item.domain === host || (item.domain === 'ciweimao.com' && CIWEIMAO_HOSTS.has(host)));
+      return active(item) && pathMatches && (item.domain === host || (item.domain === 'ciweimao.com' && CIWEIMAO_HOSTS.has(host)));
     }).map(item => `${item.name}=${item.value}`).join('; ');
   }
   async import(payload) {
-    const items = fromPayload(payload);
+    const items = fromPayload(payload).filter(active);
+    if (!items.length) throw new ArchiveError('导入的 Cookie 均已过期，请重新导出', 400);
     await this.load();
     this.entries = items;
     this.updatedAt = new Date().toISOString();

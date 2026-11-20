@@ -84,7 +84,7 @@ cp ./nikowenku-archive-skill.md .agents/skills/nikowenku-archive/SKILL.md
 
 关闭网页不会停止进程；“停止同步”只停止刺猬猫任务。移出队列保留已上架书籍，并加入排除列表，自动扫描不会再将其加入；手动添加相同 ID 可恢复。原有来源的面板、队列、扫描断点和启停互不影响。遇到登录、验证码或限流时，刺猬猫任务停止并保存进度。
 
-官网当前公开书库约 7,415 页，并在第 20 页起要求人工验证；程序遵守这一边界，不通过直接请求绕过翻页验证。达到边界时会显示原因并保留断点。管理员登录后，在刺猬猫面板的“登录状态”区域粘贴浏览器 Cookie Header，或选择浏览器导出的 Cookie JSON/storageState 文件，即可将已完成人工验证的登录状态保存给后台任务使用。Cookie 只写入 `${ARCHIVE_STATE_DIR}/ciweimao/auth.json`（默认 `.state/ciweimao/auth.json`），权限限制为服务用户；状态接口只返回域名、数量和更新时间，不返回 Cookie 原文。登录状态失效时任务仍会暂停并保留进度，需要重新导入。
+官网当前公开书库约 7,415 页，并在第 20 页起要求人工验证；程序遵守这一边界，不绕过官网验证。管理员登录后，在刺猬猫面板的“登录状态”区域粘贴浏览器 Cookie Header，或选择浏览器导出的 Cookie JSON/storageState 文件。导入仅完成格式、域名和过期时间检查，不代表官网已经接受登录态；页面会自动对当前扫描断点或官网声明的验证页发起一次真实书库检测，提供“检测可用性”按钮供再次确认。检测不会启动扫描/下载，运行中的同步任务需要先停止；结果只确认书库页访问，不保证正文接口权限。Cookie 只写入 `${ARCHIVE_STATE_DIR}/ciweimao/auth.json`（默认 `.state/ciweimao/auth.json`），状态 API 不返回原文。官网仍要求验证时，需在官网浏览器完成验证后重新导出 Cookie。
 
 此功能由 `ciweimao-download` Skill 的免费阅读流程移植而来，使用项目已有 Node.js 环境，无需安装 Python。同步缓存、队列和日志位于 `${ARCHIVE_STATE_DIR}/ciweimao/`，默认 `.state/ciweimao/`，正文发布到项目已有的 `ARCHIVE_LIBRARY`。站点变化可能需要更新适配器；正文插图保留为链接。
 

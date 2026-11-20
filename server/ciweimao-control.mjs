@@ -13,9 +13,9 @@ const script = fileURLToPath(new URL('../scripts/sync-ciweimao.mjs', import.meta
 const alive = pid => { if (!Number.isSafeInteger(pid) || pid <= 0) return false; try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
 const label = value => typeof value === 'string' ? value.slice(0, 250) : '';
 const count = value => Number.isFinite(value) ? Math.max(0, value) : 0;
-export function createCiweimaoController({ stateDir, libraryRoot }) {
+export function createCiweimaoController({ stateDir, libraryRoot, createClient = createCiweimaoClient }) {
   stateDir = join(resolve(stateDir), 'ciweimao'); libraryRoot = resolve(libraryRoot);
-  let commands = Promise.resolve(), searching = false;
+  let commands = Promise.resolve(), searching = false, checkingAuth = false;
   const cookieFile = join(stateDir, 'auth.json');
   async function status() {
     const [state, lock, queue, stop] = await Promise.all([optionalJson(join(stateDir, 'worker-state.json')), optionalJson(join(stateDir, 'worker.lock')), loadCiweimaoQueue(stateDir), optionalJson(join(stateDir, 'worker.stop'))]);
@@ -72,6 +72,33 @@ export function createCiweimaoController({ stateDir, libraryRoot }) {
       finally { searching = false; await client?.close(); }
     },
     async authStatus() { return (await createCiweimaoCookieStore(cookieFile)).status(); },
+    async checkAuth() {
+      if (checkingAuth) throw new ArchiveError('正在检测 Cookie，请稍后再试', 429);
+      checkingAuth = true;
+      let client, page = 1;
+      const result = async (status, message, reason) => ({ ...(await createCiweimaoCookieStore(cookieFile)).status(), verification: { status, page, checkedAt: new Date().toISOString(), message, ...(reason ? { reason } : {}) } });
+      try {
+        const lock = await optionalJson(join(stateDir, 'worker.lock'));
+        if (lock && alive(lock.pid)) return await result('busy', '同步任务正在运行，请先停止同步后检测，避免额外请求干扰任务。');
+        const store = await createCiweimaoCookieStore(cookieFile);
+        if (!store.status().configured) return await result('missing', '没有可用 Cookie，请先导入未过期的浏览器登录状态。');
+        const state = await optionalJson(join(stateDir, 'worker-state.json'));
+        const nextPage = state?.scan?.nextPage;
+        page = Number.isSafeInteger(nextPage) && nextPage >= 1 && nextPage <= 1000000 ? nextPage : 1;
+        client = await createClient({ cookieFile });
+        const initial = await client.discover(page);
+        if (Number.isSafeInteger(initial.verificationPage) && initial.verificationPage > page) {
+          page = initial.verificationPage;
+          await client.discover(page);
+        }
+        return await result('usable', `已确认书库第 ${page} 页可读取；未启动扫描或下载。此结果仅代表本次书库访问，不保证登录及所有正文接口可用。`);
+      } catch (error) {
+        if (error.reason === 'LIST_VERIFICATION_REQUIRED') return await result('access_required', `已保存 Cookie，但缺少书库翻页验证标记 booklistCode。请在已登录的官网浏览器打开书库第 ${page} 页，完成人工验证后重新复制该页 Cookie；仅登录账号不足以通过翻页验证。`, 'list_verification_missing');
+        if (error.code === 'ACCESS') return await result('access_required', `第 ${page} 页仍要求官网验证或访问受限。请在官网完成该页验证后重新导入；保存 Cookie 不代表验证已通过。`);
+        if (error.code === 'NETWORK') return await result('network_error', '检测时官网网络不可用，暂时无法判断 Cookie 是否有效。');
+        return await result('error', '无法确认官网返回的书库页面，请检查官网后重试。');
+      } finally { try { await client?.close(); } finally { checkingAuth = false; } }
+    },
     async importAuth(payload) { const store = await createCiweimaoCookieStore(cookieFile); return store.import(payload); },
     async clearAuth() { return (await createCiweimaoCookieStore(cookieFile)).clear(); }
   };
